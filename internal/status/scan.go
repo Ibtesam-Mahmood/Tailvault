@@ -54,6 +54,40 @@ func ManagedFiles(cfg *config.Config, root string) ([]string, error) {
 	return managed, nil
 }
 
+// ContentSize returns the real content size of a managed file: the size
+// recorded in the pointer when the working file is still a pointer (eager smudge
+// not yet run), otherwise the on-disk size. Using the pointer's size keeps the
+// committed lock's `size` equal to the real content bytes (SPEC §2) and feeds
+// the rule engine the true size rather than the ~60-byte pointer text.
+func ContentSize(root, rel string) (int64, error) {
+	path := filepath.Join(root, filepath.FromSlash(rel))
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+
+	const sniff = 256
+	head := make([]byte, sniff)
+	n, rerr := io.ReadFull(f, head)
+	if rerr != nil && rerr != io.ErrUnexpectedEOF && rerr != io.EOF {
+		return 0, rerr
+	}
+	head = head[:n]
+	if pointer.IsPointer(head) {
+		rest, _ := io.ReadAll(f)
+		if p, derr := pointer.Decode(append(head, rest...)); derr == nil {
+			return p.Size, nil
+		}
+		// Not a valid pointer after all — fall back to the on-disk size below.
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		return 0, err
+	}
+	return fi.Size(), nil
+}
+
 // ScanTree hashes each managed file's content. If a working file is still a
 // pointer (eager smudge not yet run), the sha recorded in the pointer is used
 // rather than hashing the pointer text — otherwise it would read as drifted.

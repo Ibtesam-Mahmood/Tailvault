@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"testing"
 	"time"
 
@@ -120,6 +121,48 @@ func TestPush_ContentPresentElsewhere_ZeroPut(t *testing.T) {
 	}
 	if len(res.Uploaded) != 0 || len(res.Deduped) != 1 || b.Puts != puts {
 		t.Errorf("uploaded=%v deduped=%v Puts=%d, want 0/1/%d", res.Uploaded, res.Deduped, b.Puts, puts)
+	}
+}
+
+// TestPush_CleanPointer_RecordsContentSize covers the qa-review finding: when a
+// new path's working file is still a clean pointer (blob already on the node),
+// the lock must record the real content size from the pointer, not the ~60-byte
+// pointer text length (SPEC §2).
+func TestPush_CleanPointer_RecordsContentSize(t *testing.T) {
+	ctx := context.Background()
+	content := []byte("the real one-hundred-and-eleven-ish bytes of actual blob content goes right here yes")
+	contentSHA := sha(content)
+	contentSize := int64(len(content))
+
+	root := t.TempDir()
+	// config managing *.pdf
+	if err := os.WriteFile(filepath.Join(root, "tailvault.toml"),
+		[]byte("version = 1\n[storage]\nlocation = \"home-pi\"\n[rules]\nmin_size = \"5MB\"\ninclude = [\"**/*.pdf\"]\nauto_delete = true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{Version: 1, Storage: config.Storage{Location: "home-pi"},
+		Rules: config.Rules{MinSize: "5MB", Include: []string{"**/*.pdf"}, AutoDelete: true}}
+
+	// Working file is a clean POINTER (not the real bytes), recording the true size.
+	ptr := "tailvault.v1\nsha256 " + contentSHA + "\nsize " + strconv.FormatInt(contentSize, 10) + "\nlocation home-pi\n"
+	if err := os.WriteFile(filepath.Join(root, "a.pdf"), []byte(ptr), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Blob already on the node → dedup branch (no Put), so no real bytes needed.
+	b := backend.NewFSBackend(t.TempDir())
+	_ = b.Put(ctx, "objects/"+contentSHA, bytes.NewReader(content))
+
+	lk := &lock.Lock{Version: 1}
+	if _, err := Run(ctx, root, cfg, lk, deps(b), Options{}); err != nil {
+		t.Fatalf("push: %v", err)
+	}
+	lk2, _ := lock.Load(filepath.Join(root, "tailvault.lock"))
+	if len(lk2.Entries) != 1 {
+		t.Fatalf("entries = %+v", lk2.Entries)
+	}
+	if lk2.Entries[0].Size != contentSize {
+		t.Errorf("Entry.Size = %d, want content size %d (not pointer text size %d)",
+			lk2.Entries[0].Size, contentSize, int64(len(ptr)))
 	}
 }
 

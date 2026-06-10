@@ -100,7 +100,14 @@ func Run(ctx context.Context, root string, cfg *config.Config, lk *lock.Lock, d 
 		}
 
 		// (c) New or content-changed: Stat, Put only on miss, verify, then record.
-		dec, derr := rules.Evaluate(cfg, path, fileSize(root, path))
+		// Size is the REAL content size — sourced from the pointer when the
+		// working file is still a clean pointer, never the pointer text length
+		// (SPEC §2; also feeds the rule engine the true size).
+		size, szerr := status.ContentSize(root, path)
+		if szerr != nil {
+			return Result{}, szerr
+		}
+		dec, derr := rules.Evaluate(cfg, path, size)
 		if derr != nil {
 			return Result{}, derr
 		}
@@ -143,7 +150,7 @@ func Run(ctx context.Context, root string, cfg *config.Config, lk *lock.Lock, d 
 		newEntries[path] = lock.Entry{
 			Path:     path,
 			SHA256:   sha,
-			Size:     fileSize(root, path),
+			Size:     size,
 			Location: cfg.Storage.Location,
 			PushedAt: d.now(),
 			Pusher:   pusher,
@@ -257,14 +264,6 @@ func renameSource(oldByPath map[string]lock.Entry, treeSHA map[string]string, ha
 	}
 	sort.Strings(cands)
 	return cands[0]
-}
-
-func fileSize(root, path string) int64 {
-	fi, err := os.Stat(filepath.Join(root, filepath.FromSlash(path)))
-	if err != nil {
-		return 0
-	}
-	return fi.Size()
 }
 
 func sortedKeys(m map[string]string) []string {
