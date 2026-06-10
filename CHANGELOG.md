@@ -6,6 +6,14 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.9 — 2026-06-10
+
+Phase 1 — pointer files (task-06, `internal/pointer`).
+
+- Added the 4-line pointer format (`tailvault.v1` magic, `key SP value`) with
+  `Encode`, `Decode` (strict reject of malformed input), and `IsPointer` sniffing.
+  Round-trip and rejection tests.
+
 ## v0.0.8 — 2026-06-10
 
 Phase 1 — rule engine (task-05, `internal/rules`).
