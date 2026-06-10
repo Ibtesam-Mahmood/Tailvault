@@ -6,6 +6,14 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.12 — 2026-06-10
+
+Phase 1 — config error code (task-12 prereq, pulled into M1).
+
+- Added `tserr.ConfigErr(cause, err)` / `TV-CFG-01` (exit bucket 2) so malformed config
+  fails with the spec'd exit code 2 instead of the generic 1. Required by the upcoming
+  command wiring (track, init, revert, status, push, pull).
+
 ## v0.0.11 — 2026-06-10
 
 Phase 1 — storage backend (task-09, `internal/backend`).
