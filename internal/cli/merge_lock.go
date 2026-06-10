@@ -20,7 +20,12 @@ func newMergeLockCmd() *cobra.Command {
 		Hidden: true,
 		Args:   cobra.ExactArgs(3),
 		RunE: func(_ *cobra.Command, args []string) error {
-			base := loadOrEmpty(args[0]) // base may be absent in an add/add merge
+			// base may be absent in an add/add merge — loadLockOrEmpty (shared,
+			// WS-B) treats a missing file as an empty lock.
+			base, err := loadLockOrEmpty(args[0])
+			if err != nil {
+				base = &lock.Lock{}
+			}
 			ours, err := lock.Load(args[1])
 			if err != nil {
 				return tserr.ConfigErr("merge driver: parse ours lock "+args[1], err)
@@ -36,15 +41,4 @@ func newMergeLockCmd() *cobra.Command {
 			return lock.Write(args[1], merged, "tailvault "+version.Version)
 		},
 	}
-}
-
-// loadOrEmpty returns the parsed lock at path, or an empty Lock if it is missing
-// or unparseable. The merge base legitimately may not exist (add/add), and the
-// union rule does not require it, so a missing base must not fail the merge.
-func loadOrEmpty(path string) *lock.Lock {
-	l, err := lock.Load(path)
-	if err != nil {
-		return &lock.Lock{}
-	}
-	return l
 }
