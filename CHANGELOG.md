@@ -6,6 +6,15 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.8 — 2026-06-10
+
+Phase 1 — rule engine (task-05, `internal/rules`).
+
+- Added `rules.Evaluate(cfg, path, size) Decision{Managed,History,Preserve}` —
+  `min_size` + include/exclude globs with first-match override precedence over a
+  slash-normalized repo-relative path. Tests cover size boundary, include/exclude,
+  overrides, and first-match ordering.
+
 ## v0.0.7 — 2026-06-10
 
 Phase 1 — `tailvault.lock` state (task-04, `internal/lock`).
