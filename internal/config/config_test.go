@@ -43,10 +43,13 @@ func TestLoadProposalSample(t *testing.T) {
 }
 
 func TestDefaultsAutoDeleteWhenOmitted(t *testing.T) {
-	// nolocation.toml has [rules] with no auto_delete; default must stay true.
-	cfg := defaults()
+	// Default() seeds auto_delete=true; a TOML omitting it must keep that.
+	cfg := Default()
 	if !cfg.Rules.AutoDelete {
-		t.Error("defaults AutoDelete = false, want true")
+		t.Error("Default() AutoDelete = false, want true")
+	}
+	if cfg.Version != 1 || cfg.Rules.MinSize != "5MB" {
+		t.Errorf("Default() = %+v, want version 1 + 5MB", cfg)
 	}
 	// A file that explicitly sets auto_delete = false must override the default.
 	cfg2, err := loadString(t, "version=1\n[storage]\nlocation=\"x\"\n[rules]\nauto_delete=false\n")

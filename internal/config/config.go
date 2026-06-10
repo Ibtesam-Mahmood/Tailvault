@@ -38,10 +38,13 @@ type Override struct {
 	Preserve bool   `toml:"preserve"`
 }
 
-// defaults seeds the struct before unmarshal so a TOML that omits a key keeps
-// the spec default rather than Go's zero value. In particular auto_delete must
-// default to true, and min_size to "5MB".
-func defaults() Config {
+// Default returns a Config seeded with the locked spec defaults (version 1,
+// min_size "5MB", auto_delete true, history false). It is used both as the
+// pre-unmarshal seed in Load — so a TOML that omits a key keeps the spec
+// default rather than Go's zero value — and by `init` (Task 18) to write a
+// fresh tailvault.toml. The caller must set [storage].location before the
+// config will pass Validate.
+func Default() Config {
 	return Config{
 		Version: 1,
 		Rules:   Rules{MinSize: "5MB", AutoDelete: true},
@@ -54,7 +57,7 @@ func Load(path string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	cfg := defaults()
+	cfg := Default()
 	if err := toml.Unmarshal(b, &cfg); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}

@@ -280,6 +280,25 @@ negative all error.
 
 ---
 
+## 8. Frozen Go API names (cross-workstream contract)
+
+To stop workstreams guessing at package symbols (the task files were inconsistent
+— e.g. `lock.File` vs `lock.Lock`), these names are **frozen**. Consume them
+directly; do not introduce aliases.
+
+| Package | Frozen symbols |
+|---|---|
+| `internal/lock` | type `Lock` (fields `Version`, `GeneratedBy`, `Entries []Entry`); type `Entry` (`Path`, `SHA256`, `Size`, `Location`, `PushedAt time.Time`, `Pusher`, `History`, `Preserve`, `Versions []string`); `Load(path)`, `(*Lock).Write`-equivalent `Write(path,*Lock,generatedBy)`, `(*Lock).Canonicalize()`, `(*Lock).Upsert(Entry)`, `(*Lock).Remove(path)` |
+| `internal/config` | type `Config`/`Storage`/`Rules`/`Override`; `Load(path)`, `(*Config).Validate()`, `Write(path,*Config)`, `Default() Config`, `ParseSize(string)(int64,error)`, `ValidateGlob(string)error`, `(*Config).AddInclude(string)bool` |
+| `internal/pointer` | const `Magic`; type `Pointer{SHA256,Size int64,Location}`; `Encode(Pointer)[]byte`, `Decode([]byte)(Pointer,error)`, `IsPointer([]byte)bool` |
+| `internal/tserr` | type `Error{Code,Cause,Fix string,Err error}` with `Error()`/`Unwrap()`/`ExitCode()`; `Code` consts `ConfigBad`=TV-CFG-01, `NetNotRunning`=TV-NET-01, `NetNotLoggedIn`=TV-NET-02, `NodeOffline`=TV-NODE-01, `NodeNotWritable`=TV-NODE-02, `ObjMissing`=TV-OBJ-01; constructors `ConfigErr(cause,err)`, `NetNotRunningErr(err)`, `NetNotLoggedInErr(err)`, `NodeOfflineErr(node,err)`, `NodeNotWritableErr(node,err)`, `ObjMissingErr(sha,err)`; `ExitCodeFor(error)int` |
+
+**Error-layering rule (per task-06):** leaf data packages (`config`, `lock`,
+`pointer`) return plain `error` values; commands wrap them in a typed
+`tserr.Error` at the boundary so the exit-code bucket is correct (config/parse
+failures → `tserr.ConfigErr` → exit 2). All `tserr` constructors take a trailing
+`err error` — pass `nil` when there is no underlying error.
+
 ## Cross-references
 
 - [`proposal.md`](./proposal.md) — Detailed Design (all schema blocks), Error
