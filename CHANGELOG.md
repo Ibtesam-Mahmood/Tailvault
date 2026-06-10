@@ -31,5 +31,6 @@ Project bootstrap.
 - Established project structure, the versioning system (starting at `0.0.1`),
   and the task / issue / PR workflow — see [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 - Added project guidance in [`CLAUDE.md`](./CLAUDE.md).
-- Seeded the phased implementation backlog (Phases 0–9) in [`tasks/`](./tasks/)
-  and as GitHub issues labelled `Task` / `Issue`.
+- Seeded the phased implementation backlog (Phases 0–9) as local task files in
+  [`tasks/`](./tasks/), with `.github` `Task` / `Issue` templates ready for when
+  the backlog is mirrored to GitHub issues (not yet filed — repo is local-only).
