@@ -6,6 +6,15 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.10 — 2026-06-10
+
+Phase 1 — Tailscale wrapper (task-08, `internal/tailscale`).
+
+- Added a thin wrapper over the local `tailscale` CLI: `Client.Status` (peers sorted,
+  MagicDNS dots trimmed; missing daemon → TV-NET-01, not-running → TV-NET-02), `Ping`,
+  and `Whois`. Exec seam via a `Runner` interface; committed
+  `testdata/status.json` fixture so tests need no real node.
+
 ## v0.0.9 — 2026-06-10
 
 Phase 1 — pointer files (task-06, `internal/pointer`).
