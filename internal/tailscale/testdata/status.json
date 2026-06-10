@@ -1,0 +1,8 @@
+{
+  "BackendState": "Running",
+  "Self": { "DNSName": "laptop.tailnet-name.ts.net.", "Online": true },
+  "Peer": {
+    "nodekey:abc123": { "DNSName": "home-pi.tailnet-name.ts.net.", "Online": true },
+    "nodekey:def456": { "DNSName": "office-nas.tailnet-name.ts.net.", "Online": false }
+  }
+}
