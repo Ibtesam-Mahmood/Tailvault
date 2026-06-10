@@ -34,6 +34,12 @@ func newLocationAddCmd() *cobra.Command {
 		Short: "Register a tailnode storage target (writes locations.toml)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// No --base-path means the non-scriptable fields weren't supplied:
+			// run the interactive flow (pick-list unless --node, then prompts).
+			if basePath == "" {
+				return registerInteractive(cmd, args[0], node)
+			}
+			// Fully flag-driven (scriptable) path.
 			reg, err := locations.Load()
 			if err != nil {
 				return err

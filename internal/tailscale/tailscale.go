@@ -18,8 +18,9 @@ import (
 
 // Peer is the subset of a tailscale status peer tailvault cares about.
 type Peer struct {
-	DNSName string // MagicDNS name, trailing dot trimmed, e.g. "home-pi.tailnet-name.ts.net"
-	Online  bool
+	DNSName string   // MagicDNS name, trailing dot trimmed, e.g. "home-pi.tailnet-name.ts.net"
+	Online  bool     // whether the peer is currently reachable
+	IPs     []string // TailscaleIPs (100.x), used as a label fallback when DNSName is empty
 }
 
 // Status is the parsed, trimmed view of `tailscale status --json`.
@@ -58,8 +59,9 @@ type statusJSON struct {
 }
 
 type peerJSON struct {
-	DNSName string `json:"DNSName"`
-	Online  bool   `json:"Online"`
+	DNSName      string   `json:"DNSName"`
+	Online       bool     `json:"Online"`
+	TailscaleIPs []string `json:"TailscaleIPs"`
 }
 
 // Status parses `tailscale status --json`.
@@ -100,10 +102,10 @@ func projectStatus(sj statusJSON) (Status, error) {
 	}
 	st := Status{LoggedIn: true}
 	if sj.Self != nil {
-		st.Self = Peer{DNSName: trimDNS(sj.Self.DNSName), Online: sj.Self.Online}
+		st.Self = Peer{DNSName: trimDNS(sj.Self.DNSName), Online: sj.Self.Online, IPs: sj.Self.TailscaleIPs}
 	}
 	for _, p := range sj.Peer {
-		st.Peers = append(st.Peers, Peer{DNSName: trimDNS(p.DNSName), Online: p.Online})
+		st.Peers = append(st.Peers, Peer{DNSName: trimDNS(p.DNSName), Online: p.Online, IPs: p.TailscaleIPs})
 	}
 	// Deterministic ordering for stable pick-lists and tests.
 	sort.Slice(st.Peers, func(i, j int) bool { return st.Peers[i].DNSName < st.Peers[j].DNSName })

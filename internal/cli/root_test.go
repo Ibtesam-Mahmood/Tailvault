@@ -51,9 +51,10 @@ func TestHelpListsAllCommands(t *testing.T) {
 
 func TestStubsRunCleanly(t *testing.T) {
 	// Commands still backed by the notImplemented stub. As each command is
-	// implemented it is removed from this list.
+	// implemented it is removed from this list (track -> task-12,
+	// location -> task-10, setup -> task-11 done).
 	cmds := [][]string{
-		{"setup"}, {"init"}, {"status"},
+		{"init"}, {"status"},
 		{"push"}, {"pull"}, {"gc"}, {"verify"},
 		{"revert", "a/b.pdf", "deadbeef"},
 	}

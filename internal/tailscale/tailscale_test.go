@@ -58,7 +58,7 @@ func TestStatus_ParsesFixture(t *testing.T) {
 		{DNSName: "office-nas.tailnet-name.ts.net", Online: false},
 	}
 	for i, w := range want {
-		if st.Peers[i] != w {
+		if st.Peers[i].DNSName != w.DNSName || st.Peers[i].Online != w.Online {
 			t.Errorf("Peers[%d] = %+v, want %+v", i, st.Peers[i], w)
 		}
 	}
