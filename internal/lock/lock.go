@@ -34,17 +34,14 @@ type Entry struct {
 	Versions []string `toml:"versions,omitempty"`
 }
 
-// Load reads and unmarshals a tailvault.lock.
+// Load reads and unmarshals a tailvault.lock from a file path. It delegates to
+// Parse so the file- and byte-oriented parsers stay identical.
 func Load(path string) (*Lock, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	var l Lock
-	if err := toml.Unmarshal(b, &l); err != nil {
-		return nil, err
-	}
-	return &l, nil
+	return Parse(b)
 }
 
 // Canonicalize sorts entries by Path (byte-wise, stable) and normalizes
