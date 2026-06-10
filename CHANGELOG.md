@@ -6,6 +6,13 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.19 — 2026-06-10
+
+Phase 2 — Taildrive backend (task-22, `internal/backend/taildrive.go`).
+
+- Added the `Taildrive` backend (`NewTaildrive(root)`) as a second `Backend` impl
+  alongside SSH; passes the shared `RunContract` test.
+
 ## v0.0.18 — 2026-06-10
 
 Phase 2 — status (task-13, `internal/status`).
