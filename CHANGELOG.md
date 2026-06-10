@@ -6,6 +6,19 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.36 — 2026-06-10
+
+Phase 3 — setup/locations/taildrive hardening (task-10/11/22 fix, R-B).
+
+- `setup` discovery test no longer depends on the host lacking tailscale (a
+  `statusForDiscovery` seam forces deterministic manual fallback).
+- Taildrive silent-success guard: `preflightNode` now requires a taildrive `base_path`
+  to exist as a directory, so an unmounted/absent mountpoint fails TV-NODE-01 instead of
+  writing to local disk.
+- `resolveBackend` wraps `locations.Load` errors in `tserr.ConfigErr` and guards the ssh
+  user / taildrive share; added repo selection-table + `location ls` RunE tests; setup
+  Short-help nit.
+
 ## v0.0.35 — 2026-06-10
 
 Phase 3 — track pointer-aware report + dead-code removal (task-12 fix, R-A).

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -9,6 +10,14 @@ import (
 	"github.com/Ibtesam-Mahmood/tailvault/internal/setup"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/tailscale"
 )
+
+// statusForDiscovery is the seam for tailnet peer discovery in the interactive
+// flow. It defaults to the real local session but is overridden in tests so the
+// flow runs deterministically with no real tailscale daemon (per the
+// no-real-Tailscale test rule).
+var statusForDiscovery = func(ctx context.Context) (tailscale.Status, error) {
+	return tailscale.New().Status(ctx)
+}
 
 // registerInteractive runs the interactive node-registration flow shared by
 // `setup` and the interactive form of `location add`: it enumerates online
@@ -33,7 +42,7 @@ func registerInteractive(cmd *cobra.Command, name, node string) error {
 
 	var peers []setup.Peer
 	if node == "" {
-		st, err := tailscale.New().Status(cmd.Context())
+		st, err := statusForDiscovery(cmd.Context())
 		if p, ok := setup.OnlinePeers(st, err); ok {
 			peers = p
 		} else {

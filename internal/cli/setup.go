@@ -10,7 +10,7 @@ func newSetupCmd() *cobra.Command {
 	var node string
 	cmd := &cobra.Command{
 		Use:   "setup",
-		Short: "Interactively register a node and write tailvault.toml + hooks",
+		Short: "Interactively register a storage node (then run `tailvault init`)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := registerInteractive(cmd, "", node); err != nil {

@@ -2,16 +2,32 @@ package cli
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/Ibtesam-Mahmood/tailvault/internal/locations"
+	"github.com/Ibtesam-Mahmood/tailvault/internal/tailscale"
 )
 
-// With no real tailscale binary present, discovery fails and the flow falls back
-// to manual entry — a deterministic path for testing the wiring end to end.
+// forceManualDiscovery overrides the discovery seam so the interactive flow runs
+// deterministically with no real tailscale daemon (peer discovery returns an
+// error → manual fallback), regardless of whether the host has Tailscale.
+func forceManualDiscovery(t *testing.T) {
+	t.Helper()
+	prev := statusForDiscovery
+	statusForDiscovery = func(context.Context) (tailscale.Status, error) {
+		return tailscale.Status{}, errors.New("test: discovery disabled")
+	}
+	t.Cleanup(func() { statusForDiscovery = prev })
+}
+
+// Discovery is forced to fail via the seam, so the flow falls back to manual
+// entry deterministically — no dependence on the host's tailscale binary.
 func TestSetup_InteractiveManualFallback(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	forceManualDiscovery(t)
 
 	root := newRootCmd()
 	var out, errb bytes.Buffer
@@ -42,6 +58,7 @@ func TestSetup_InteractiveManualFallback(t *testing.T) {
 
 func TestLocationAdd_InteractiveWhenNoBasePath(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	forceManualDiscovery(t) // --node bypasses the pick-list, but keep it deterministic
 
 	root := newRootCmd()
 	var out, errb bytes.Buffer

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path"
@@ -56,7 +57,9 @@ func loadConfig(root string) (*config.Config, error) {
 func resolveBackend(_ context.Context, cfg *config.Config) (backend.Backend, locations.Location, error) {
 	reg, err := locations.Load()
 	if err != nil {
-		return nil, locations.Location{}, err
+		// Wrap a registry read/parse failure as a config error at the boundary
+		// (e.g. EACCES on locations.toml would otherwise leak as exit 1).
+		return nil, locations.Location{}, tserr.ConfigErr("load locations.toml", err)
 	}
 	loc, ok := reg.Locations[cfg.Storage.Location]
 	if !ok {
@@ -65,6 +68,9 @@ func resolveBackend(_ context.Context, cfg *config.Config) (backend.Backend, loc
 	base := path.Join(loc.BasePath, cfg.Storage.Subpath)
 	switch loc.Backend {
 	case locations.BackendSSH:
+		if loc.User == "" {
+			return nil, locations.Location{}, tserr.ConfigErr("ssh location "+cfg.Storage.Location+" missing user", nil)
+		}
 		return &backend.SSH{
 			User:     loc.User,
 			Node:     loc.Node,
@@ -72,6 +78,11 @@ func resolveBackend(_ context.Context, cfg *config.Config) (backend.Backend, loc
 			Ping:     tailscale.New().Ping,
 		}, loc, nil
 	case locations.BackendTaildrive:
+		// Guard share even though locations.Validate blocks it at Add time — a
+		// hand-edited locations.toml could bypass that.
+		if loc.Share == "" {
+			return nil, locations.Location{}, tserr.ConfigErr("taildrive location "+cfg.Storage.Location+" missing share", nil)
+		}
 		return backend.NewTaildrive(base), loc, nil
 	default:
 		return nil, locations.Location{}, tserr.ConfigErr("location "+cfg.Storage.Location+" has unknown backend", nil)
@@ -79,17 +90,30 @@ func resolveBackend(_ context.Context, cfg *config.Config) (backend.Backend, loc
 }
 
 // preflightNode is the command-level preflight that runs BEFORE any transfer:
-// it confirms the local tailnet session is healthy (TV-NET-01/02) and, for an
-// ssh location, that the node answers a ping (TV-NODE-01). Taildrive relies on
-// the backend's own os-level errors for an unmounted/unwritable share.
+// it confirms the local tailnet session is healthy (TV-NET-01/02) and, per
+// backend, that the target is reachable (TV-NODE-01) — an ssh node answers a
+// ping; a taildrive share's base_path must exist as a directory.
+//
+// The taildrive base_path check guards against the hard-fail-violating case
+// where an unmounted share's mountpoint is absent: without it, a Put would
+// MkdirAll + write to LOCAL disk and falsely report success. (Residual: a
+// mountpoint that exists but is unmounted/empty is not detected here — tracked
+// as a known v1 limitation; SSH is the hardened MVP path.)
 func preflightNode(ctx context.Context, loc locations.Location) error {
 	ts := tailscale.New()
 	if _, err := ts.Status(ctx); err != nil {
 		return err // already a typed TV-NET-01/02
 	}
-	if loc.Backend == locations.BackendSSH {
+	switch loc.Backend {
+	case locations.BackendSSH:
 		if err := ts.Ping(ctx, loc.Node); err != nil {
 			return tserr.NodeOfflineErr(loc.Node, err)
+		}
+	case locations.BackendTaildrive:
+		fi, err := os.Stat(loc.BasePath)
+		if err != nil || !fi.IsDir() {
+			return tserr.NodeOfflineErr(loc.Node,
+				fmt.Errorf("taildrive share base_path %q is not present as a directory (is the share mounted?)", loc.BasePath))
 		}
 	}
 	return nil
