@@ -6,6 +6,13 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.16 — 2026-06-10
+
+Phase 2 — location registry (task-10, `internal/locations`).
+
+- Added a user-level TOML location registry (XDG) with per-backend validation and a
+  reachability `Check` (injected ping), plus the `location add` / `location ls` commands.
+
 ## v0.0.15 — 2026-06-10
 
 Phase 2 — `track` command (task-12).
