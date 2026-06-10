@@ -6,6 +6,15 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.23 — 2026-06-10
+
+Phase 3 — garbage collection (task-16, `internal/gc`).
+
+- Added the mark-and-sweep GC: a pure `PlanSweep`/keep-set core (`BuildKeepSet`,
+  `BuildPreserveSet`) and `Sweep`, with a branch-union keep-set assembled via gitglue,
+  plus the `gc [--dry-run]` command. History versions and preserved files survive;
+  cross-branch references are kept.
+
 ## v0.0.22 — 2026-06-10
 
 Phase 2 — config-error wrapping + objMissing fix (WS-B follow-up).
