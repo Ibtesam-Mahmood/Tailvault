@@ -6,6 +6,15 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.15 — 2026-06-10
+
+Phase 2 — `track` command (task-12).
+
+- Implemented `tailvault track <glob>...`: validate-all-before-mutate, append-only
+  idempotent `config.AddInclude` + `ValidateGlob`, write-on-change, and an offline
+  tree-walk that reports managed files via the rule engine (never contacts a node).
+  Routes bad config through `tserr.ConfigErr`/TV-CFG-01 (exit 2).
+
 ## v0.0.14 — 2026-06-10
 
 Phase 1 — lock read helpers (pulled into M1 to unblock WS-C).
