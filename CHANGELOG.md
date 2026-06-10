@@ -6,6 +6,14 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.14 — 2026-06-10
+
+Phase 1 — lock read helpers (pulled into M1 to unblock WS-C).
+
+- Added `lock.Parse`, `lock.Find`, and `lock.ReferencedSHAs` (`internal/lock/query.go`)
+  — read-side helpers that gc/verify/revert (WS-C) build on. Updated the SPEC §8 lock row
+  to match. Implemented (not stubbed) per team-lead.
+
 ## v0.0.13 — 2026-06-10
 
 Phase 1 — config defaults + frozen Go API names (task-01/03 refinement, pulled into M1).
