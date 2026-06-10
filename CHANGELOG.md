@@ -6,6 +6,16 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.27 — 2026-06-10
+
+Phase 3 — history (task-20, `internal/history` + push hook).
+
+- Added optional per-file history: stable content-independent `PathID`/`RefKey`,
+  `AppendVersion` (newest-first, dedup-head) and `ReadVersions`. Wired into `push.Run`
+  at the task-20 seam — with history on, a content change appends to `refs/<path-id>`
+  and `versions[]` instead of marking the superseded SHA for GC; GC keeps all history
+  versions.
+
 ## v0.0.26 — 2026-06-10
 
 Phase 3 — git hooks (task-19, `internal/hooks`).
