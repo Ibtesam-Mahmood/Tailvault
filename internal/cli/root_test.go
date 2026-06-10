@@ -50,8 +50,9 @@ func TestHelpListsAllCommands(t *testing.T) {
 }
 
 func TestStubsRunCleanly(t *testing.T) {
+	// track is implemented (Task 12); the rest are still stubs.
 	cmds := [][]string{
-		{"setup"}, {"init"}, {"track", "**/*.pdf"}, {"status"},
+		{"setup"}, {"init"}, {"status"},
 		{"push"}, {"pull"}, {"gc"}, {"verify"},
 		{"revert", "a/b.pdf", "deadbeef"},
 		{"location", "add", "home-pi"}, {"location", "ls"},
