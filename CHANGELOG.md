@@ -6,6 +6,14 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.17 — 2026-06-10
+
+Phase 2 — setup + interactive node discovery (task-11, `internal/setup`).
+
+- Added the `setup` command and interactive `location add` flow: `OnlinePeers` discovery
+  over the tailscale fixture, a `Prompter` interface with a stdlib `StdinPrompter`. See
+  DEVIATIONS (stdlib prompter chosen over an unlisted TUI dependency).
+
 ## v0.0.16 — 2026-06-10
 
 Phase 2 — location registry (task-10, `internal/locations`).
