@@ -6,6 +6,15 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.33 — 2026-06-10
+
+Phase 3 — status ManagedFiles pointer-aware size (task-13 fix, R-B C2).
+
+- `status.ManagedFiles` now sizes via `status.ContentSize` (pointer-aware) instead of
+  raw `os.Stat`, so a min_size-only file that is currently a clean pointer (~60-byte
+  text) is no longer mis-dropped from the managed set during the pre-pull window. Same
+  root cause as the v0.0.31 push fix, one layer up. Test `TestManagedFiles_MinSizeOnlyPointer`.
+
 ## v0.0.32 — 2026-06-10
 
 Phase 3 — pull corrupt-vs-missing message (task-15 fix, R-B).
