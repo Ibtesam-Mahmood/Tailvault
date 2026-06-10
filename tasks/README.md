@@ -1,39 +1,56 @@
-# Implementation backlog
+# Implementation backlog — 26 tasks in 3 blocks
 
-Tailvault is built in **10 phases (0–9)**. Each phase is a **block** of one or
-more PRs that together complete it. These local files mirror the GitHub issues
-and carry the durable detail (acceptance criteria, schemas, reference images in
-[`assets/`](./assets/)) that doesn't fit in a terse issue.
+Tailvault's [`proposal.md`](../proposal.md) is broken into **26 granular,
+standalone tasks** grouped into **3 blocks**. Each task is one PR. Files are
+zero-padded `task-NN-<slug>.md` and carry full context (an agent can execute one
+without re-reading the proposal). Reference images go in [`assets/`](./assets/).
 
-See [`../proposal.md`](../proposal.md) for the full rationale and
-[`../CONTRIBUTING.md`](../CONTRIBUTING.md) for the workflow.
+See [`../CONTRIBUTING.md`](../CONTRIBUTING.md) for the versioning / PR workflow.
 
-## Phase → block map
+## Block 1 — MVP (proposal Phases 0–5): usable SSH-backed tool wired into git
 
-| Phase | File | Block goal | Est. |
+| # | Task | Type | Deps |
 | --- | --- | --- | --- |
-| 0 | [`task-00-decisions-spec-freeze.md`](./task-00-decisions-spec-freeze.md) | Resolve open questions; freeze `tailvault.toml` / `tailvault.lock` / pointer schemas. | 0.5 d |
-| 1 | [`task-01-foundation.md`](./task-01-foundation.md) | Go module + Cobra CLI; config/lock parse/write; rule engine. | 2 d |
-| 2 | [`task-02-backend-ssh.md`](./task-02-backend-ssh.md) | Backend interface; SSH impl; Tailscale liveness checks. | 2 d |
-| 3 | [`task-03-core-engine.md`](./task-03-core-engine.md) | `track`, `status`, `push` (upload/dedup/lock), `pull`. | 3 d |
-| 4 | [`task-04-retention-gc.md`](./task-04-retention-gc.md) | Delete detection, `auto_delete`, `preserve`, per-branch GC. | 2 d |
-| 5 | [`task-05-git-integration.md`](./task-05-git-integration.md) | `clean`/`smudge` filter + pointer format; git hooks. | 2 d |
-| 6 | [`task-06-history-revert.md`](./task-06-history-revert.md) | Opt-in `history`; `refs/<path-id>`; `revert`. | 1.5 d |
-| 7 | [`task-07-taildrive-backend.md`](./task-07-taildrive-backend.md) | Mounted-path backend; backend selection from config. | 1 d |
-| 8 | [`task-08-harden-tests-docs.md`](./task-08-harden-tests-docs.md) | `verify`, lock-merge driver, unit/integration tests, docs. | 3 d |
-| 9 | [`task-09-dogfood-root-pnp.md`](./task-09-dogfood-root-pnp.md) | Real migration of `root-pnp`; verify lean clone + reliable sync. | 1 d |
+| 01 | [spec-freeze](./task-01-spec-freeze.md) — lock toml/lock/pointer + error-code + locations schemas | Foundation | — |
+| 02 | [go-module-cli-skeleton](./task-02-go-module-cli-skeleton.md) — Cobra root, stub subcommands, `--version` from `VERSION` | Foundation | 01 |
+| 03 | [config-parse](./task-03-config-parse.md) — `internal/config` `tailvault.toml` parse/validate/write | Foundation | 02 |
+| 04 | [lock-parse](./task-04-lock-parse.md) — `internal/lock` `tailvault.lock` parse/write (canonical) | Foundation | 02 |
+| 05 | [rule-engine](./task-05-rule-engine.md) — `internal/rules` min_size + globs + overrides | Foundation | 03 |
+| 06 | [pointer-format](./task-06-pointer-format.md) — `internal/pointer` encode/decode round-trip | Foundation | 02 |
+| 07 | [error-model](./task-07-error-model.md) — `internal/tserr` typed codes + exit buckets | Foundation | 02 |
+| 08 | [tailscale-wrapper](./task-08-tailscale-wrapper.md) — `internal/tailscale` status/ping/whois | Implementation | 02, 07 |
+| 09 | [backend-ssh](./task-09-backend-ssh.md) — `Backend` interface + SSH impl | Implementation | 07, 08 |
+| 10 | [locations-registry](./task-10-locations-registry.md) — `locations.toml`; `location add`/`ls` | Implementation | 08, 07 |
+| 11 | [interactive-setup](./task-11-interactive-setup.md) — `setup` pick-list from local session + manual fallback | Implementation | 10, 08 |
+| 12 | [track](./task-12-track.md) — `track <glob>` writes config rule | Implementation | 03, 05 |
+| 13 | [status](./task-13-status.md) — local-only/pushed/drifted/orphaned | Implementation | 04, 05, 09 |
+| 14 | [push](./task-14-push.md) — hash/upload/dedup/lock, preflight hard-fail | Implementation | 09, 04, 05, 06, 07 |
+| 15 | [pull](./task-15-pull.md) — fetch needed blobs + integrity | Implementation | 09, 04, 06 |
+| 16 | [gc-retention](./task-16-gc-retention.md) — delete-detect, auto_delete, preserve, per-branch GC, `--dry-run` | Implementation | 14, 04 |
+| 17 | [clean-smudge-filter](./task-17-clean-smudge-filter.md) — git filter driver | Integration | 06, 14, 15 |
+| 18 | [init](./task-18-init.md) — write config, `.gitattributes`, register filter | Integration | 17, 03 |
+| 19 | [git-hooks](./task-19-git-hooks.md) — pre-push / post-merge / post-checkout | Integration | 14, 15, 18 |
 
-## Critical path & MVP
+## Block 2 — Hardening & extras (proposal Phases 6–8)
 
-- **MVP** = Phases 0–5 + light tests (SSH only; `init/track/status/push/pull/gc`;
-  no history, no Taildrive). ~10 ideal eng-days.
-- **Full v1** = all phases. ~18 ideal eng-days.
-- Phases are mostly sequential. Phase 7 (Taildrive) and Phase 6 (history) are
-  independent of each other and can slot in after the core engine (Phase 3) and
-  git integration (Phase 5) respectively.
+| # | Task | Type | Deps |
+| --- | --- | --- | --- |
+| 20 | [history-refs](./task-20-history-refs.md) — opt-in `history`, `refs/<path-id>`, GC-exempt | Implementation | 14, 16 |
+| 21 | [revert](./task-21-revert.md) — `revert <path> <sha>` | Implementation | 20 |
+| 22 | [taildrive-backend](./task-22-taildrive-backend.md) — mounted-path backend + selection | Implementation | 09, 10 |
+| 23 | [verify](./task-23-verify.md) — re-hash stored blobs, report corrupt/missing | Implementation | 09, 04 |
+| 24 | [lock-merge-driver](./task-24-lock-merge-driver.md) — per-path union merge driver, installed by `init` | Integration | 04, 18 |
+| 25 | [tests-docs-ci](./task-25-tests-docs-ci.md) — integration suite, user docs, CI workflow | Testing | Block 1 |
 
-## Conventions
+## Block 3 — Dogfood (proposal Phase 9)
 
-- Each task file: `task-NN-<slug>.md`, links its GitHub issue once filed.
-- Drop reference images / mockups in [`assets/`](./assets/) and link them from the
-  relevant task file.
+| # | Task | Type | Deps |
+| --- | --- | --- | --- |
+| 26 | [dogfood-root-pnp](./task-26-dogfood-root-pnp.md) — migrate `root-pnp`; lean clone, reliable sync, GC reclaim, rollback doc | Acceptance | Block 1 (+23, 24) |
+
+## Critical path & parallelism
+
+- **Critical path:** 01 → 02 → 09 → 14 → 17 → 19 → 25 → 26.
+- **Fan-out after 02:** 03 / 04 / 06 / 07 are independent; 05 follows 03.
+- **MVP** ships after Block 1 (~10 ideal eng-days). Block 2 items (20–24) are
+  mutually independent and can land in any order / in parallel.
