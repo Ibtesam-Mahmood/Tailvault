@@ -30,6 +30,12 @@ type Entry struct {
 	Pusher   string    `toml:"pusher"`
 	History  bool      `toml:"history"`
 	Preserve bool      `toml:"preserve"`
+	// Deleted marks a tombstone: the working file is gone but its blob must
+	// survive (the path was preserved, or auto_delete was opted out). push keeps
+	// such entries with Deleted=true instead of dropping them, so the sha stays
+	// in ReferencedSHAs/BuildPreserveSet and GC does not sweep the blob. Omitted
+	// from on-disk form for live entries so existing locks are byte-identical.
+	Deleted bool `toml:"deleted,omitempty"`
 	// Versions is newest-first; emitted only for history-on entries.
 	Versions []string `toml:"versions,omitempty"`
 }

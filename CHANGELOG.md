@@ -6,6 +6,14 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.40 — 2026-06-10
+
+Phase 3 — lock: add `Entry.Deleted` tombstone field (additive) to enable the
+preserve-aware GC fix. A tombstone keeps a `preserve` blob in GC's keep-set without
+materializing the file. `omitempty` keeps live entries byte-identical on disk (no
+golden-file churn); `Merge`/`ReferencedSHAs` carry the field through unchanged.
+Requested by the push↔gc preserve-deletion data-loss fix. SPEC §2/§8 updated.
+
 ## v0.0.39 — 2026-06-10
 
 Phase 3 — docs fix (R-C.25-1): correct `docs/usage.md` min_size unit semantics to

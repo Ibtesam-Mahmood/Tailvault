@@ -86,7 +86,12 @@ Each entry is a `[[entry]]` table. **Canonical ordering rules:**
 - Entries are sorted by `path`, **byte-wise ascending**, stable across writes.
 - Field order **within** each entry is fixed:
   `path`, `sha256`, `size`, `location`, `pushed_at`, `pusher`, `history`,
-  `preserve`, then `versions` (history-on entries only).
+  `preserve`, `deleted` (tombstones only), then `versions` (history-on entries
+  only).
+- `deleted = true` marks a **tombstone**: the working file is gone but its blob
+  must survive — emitted only when the path was preserved or `auto_delete` was
+  opted out. `push` retains tombstone entries instead of dropping them so the
+  sha stays in the GC keep-set; omitted for live entries (default `false`).
 - `versions = ["<newest>", …, "<oldest>"]` — **newest-first** (load-bearing for
   `revert` (Task 21) and GC keep-set construction (Task 16); the direction is
   normative).
@@ -106,6 +111,7 @@ Each entry is a `[[entry]]` table. **Canonical ordering rules:**
 | `pusher` | string | `tailscale whois`, else git `user.email` |
 | `history` | bool | effective history flag for this entry |
 | `preserve` | bool | effective preserve flag for this entry |
+| `deleted` | bool | **tombstones only**; working file gone, blob retained |
 | `versions` | []string | **history-on only**; prior shas, newest-first |
 
 ### Sample (verbatim from proposal.md)
@@ -288,7 +294,7 @@ directly; do not introduce aliases.
 
 | Package | Frozen symbols |
 |---|---|
-| `internal/lock` | type `Lock` (fields `Version`, `GeneratedBy`, `Entries []Entry`); type `Entry` (`Path`, `SHA256`, `Size`, `Location`, `PushedAt time.Time`, `Pusher`, `History`, `Preserve`, `Versions []string`); `Load(path)`, `Parse([]byte)(*Lock,error)`, `Write(path,*Lock,generatedBy)`, `(*Lock).Canonicalize()`, `(*Lock).Upsert(Entry)`, `(*Lock).Remove(path)`, `(*Lock).Find(path)(Entry,bool)`, `(*Lock).ReferencedSHAs()[]string` (current sha + all versions, deduped) |
+| `internal/lock` | type `Lock` (fields `Version`, `GeneratedBy`, `Entries []Entry`); type `Entry` (`Path`, `SHA256`, `Size`, `Location`, `PushedAt time.Time`, `Pusher`, `History`, `Preserve`, `Deleted bool` (tombstone), `Versions []string`); `Load(path)`, `Parse([]byte)(*Lock,error)`, `Write(path,*Lock,generatedBy)`, `(*Lock).Canonicalize()`, `(*Lock).Upsert(Entry)`, `(*Lock).Remove(path)`, `(*Lock).Find(path)(Entry,bool)`, `(*Lock).ReferencedSHAs()[]string` (current sha + all versions, deduped) |
 | `internal/config` | type `Config`/`Storage`/`Rules`/`Override`; `Load(path)`, `(*Config).Validate()`, `Write(path,*Config)`, `Default() Config`, `ParseSize(string)(int64,error)`, `ValidateGlob(string)error`, `(*Config).AddInclude(string)bool` |
 | `internal/pointer` | const `Magic`; type `Pointer{SHA256,Size int64,Location}`; `Encode(Pointer)[]byte`, `Decode([]byte)(Pointer,error)`, `IsPointer([]byte)bool` |
 | `internal/tserr` | type `Error{Code,Cause,Fix string,Err error}` with `Error()`/`Unwrap()`/`ExitCode()`; `Code` consts `ConfigBad`=TV-CFG-01, `NetNotRunning`=TV-NET-01, `NetNotLoggedIn`=TV-NET-02, `NodeOffline`=TV-NODE-01, `NodeNotWritable`=TV-NODE-02, `ObjMissing`=TV-OBJ-01; constructors `ConfigErr(cause,err)`, `NetNotRunningErr(err)`, `NetNotLoggedInErr(err)`, `NodeOfflineErr(node,err)`, `NodeNotWritableErr(node,err)`, `ObjMissingErr(sha,err)`; `ExitCodeFor(error)int` |

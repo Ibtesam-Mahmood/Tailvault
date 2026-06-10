@@ -125,6 +125,34 @@ func TestHistoryOffOmitsVersions(t *testing.T) {
 	}
 }
 
+func TestLiveEntryOmitsDeletedKey(t *testing.T) {
+	in := &Lock{Entries: []Entry{{
+		Path: "x.pdf", SHA256: "ab", Size: 1, Location: "l", PushedAt: fixedTime(),
+	}}}
+	_, raw := writeAndReload(t, in)
+	if strings.Contains(string(raw), "deleted") {
+		t.Errorf("live (non-tombstone) entry must omit the deleted key:\n%s", raw)
+	}
+}
+
+func TestTombstoneRoundTripsAndStaysReferenced(t *testing.T) {
+	in := &Lock{Entries: []Entry{{
+		Path: "preserved/gone.pdf", SHA256: "cafe", Size: 9, Location: "home-pi",
+		PushedAt: fixedTime(), Preserve: true, Deleted: true,
+	}}}
+	got, raw := writeAndReload(t, in)
+	if !got.Entries[0].Deleted {
+		t.Errorf("tombstone lost Deleted flag on round-trip:\n%s", raw)
+	}
+	if !strings.Contains(string(raw), "deleted = true") {
+		t.Errorf("tombstone must serialize deleted = true:\n%s", raw)
+	}
+	// A tombstone keeps its blob alive: its sha must remain in the GC keep-set.
+	if refs := got.ReferencedSHAs(); len(refs) != 1 || refs[0] != "cafe" {
+		t.Errorf("tombstone sha must stay referenced, got %v", refs)
+	}
+}
+
 func TestPushedAtUTC(t *testing.T) {
 	loc := time.FixedZone("CEST", 2*3600)
 	in := &Lock{Entries: []Entry{{
