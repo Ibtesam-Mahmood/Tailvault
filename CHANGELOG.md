@@ -6,6 +6,15 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.24 — 2026-06-10
+
+Phase 3 — clean/smudge filter (task-17, `internal/filter`).
+
+- Added the git filter engine: `Clean` (byte→pointer, node-free so `git add` works
+  offline) and `Smudge` (pointer→bytes, integrity-checked against the SHA). Missing blob
+  → TV-OBJ-01 (exit 5); integrity mismatch → exit 5 with no bytes emitted. Hidden
+  `filter-clean` / `filter-smudge` commands.
+
 ## v0.0.23 — 2026-06-10
 
 Phase 3 — garbage collection (task-16, `internal/gc`).
