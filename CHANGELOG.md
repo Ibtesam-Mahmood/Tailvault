@@ -6,6 +6,15 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.31 — 2026-06-10
+
+Phase 3 — push records real content size (task-14 fix, R-B).
+
+- Added `status.ContentSize` (pointer-aware: uses `pointer.Decode().Size` when the working
+  file is a clean pointer, else `os.Stat`); `push` now sources both `rules.Evaluate` and
+  `Entry.Size` from it. Fixes a clean-pointer file (dedup branch) recording the ~60-byte
+  pointer text length instead of the real content size (SPEC §2).
+
 ## v0.0.30 — 2026-06-10
 
 Phase 3 — lock merge driver (task-24, `internal/lock/merge.go`).
