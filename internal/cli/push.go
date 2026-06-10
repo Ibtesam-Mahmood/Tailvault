@@ -7,7 +7,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/Ibtesam-Mahmood/tailvault/internal/config"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/push"
 )
 
@@ -25,7 +24,7 @@ func newPushCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cfg, err := config.Load(filepath.Join(root, configName))
+			cfg, err := loadConfig(root)
 			if err != nil {
 				return err
 			}

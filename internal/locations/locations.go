@@ -15,19 +15,6 @@ import (
 	"github.com/Ibtesam-Mahmood/tailvault/internal/tserr"
 )
 
-// cfgErr builds a config/precondition error (TV-CFG-01, exit bucket 2).
-//
-// TODO(coder-ws-a): replace with tserr.ConfigErr once it lands on the
-// integration branch — this builds the identical typed error meanwhile.
-func cfgErr(cause string, err error) *tserr.Error {
-	return &tserr.Error{
-		Code:  tserr.Code("TV-CFG-01"),
-		Cause: cause,
-		Fix:   "correct the configuration and retry",
-		Err:   err,
-	}
-}
-
 // Backend identifies how a location's bytes are transferred.
 type Backend string
 
@@ -80,7 +67,7 @@ func Load() (Registry, error) {
 	}
 	var r Registry
 	if err := toml.Unmarshal(data, &r); err != nil {
-		return Registry{}, cfgErr(fmt.Sprintf("parse %s", path), err)
+		return Registry{}, tserr.ConfigErr(fmt.Sprintf("parse %s", path), err)
 	}
 	if r.Locations == nil {
 		r.Locations = map[string]Location{}
@@ -110,7 +97,7 @@ func (r Registry) Save() error {
 // base_path, share.
 func (r *Registry) Add(name string, loc Location) error {
 	if name == "" {
-		return cfgErr("location name must not be empty", nil)
+		return tserr.ConfigErr("location name must not be empty", nil)
 	}
 	if err := loc.Validate(); err != nil {
 		return err
@@ -125,24 +112,24 @@ func (r *Registry) Add(name string, loc Location) error {
 // Validate checks that a Location has the fields its backend requires.
 func (loc Location) Validate() error {
 	if loc.Node == "" {
-		return cfgErr("location: node is required", nil)
+		return tserr.ConfigErr("location: node is required", nil)
 	}
 	if loc.BasePath == "" {
-		return cfgErr("location: base_path is required", nil)
+		return tserr.ConfigErr("location: base_path is required", nil)
 	}
 	switch loc.Backend {
 	case BackendSSH:
 		if loc.User == "" {
-			return cfgErr("location: ssh backend requires user", nil)
+			return tserr.ConfigErr("location: ssh backend requires user", nil)
 		}
 	case BackendTaildrive:
 		if loc.Share == "" {
-			return cfgErr("location: taildrive backend requires share", nil)
+			return tserr.ConfigErr("location: taildrive backend requires share", nil)
 		}
 	case "":
-		return cfgErr("location: backend is required (ssh|taildrive)", nil)
+		return tserr.ConfigErr("location: backend is required (ssh|taildrive)", nil)
 	default:
-		return cfgErr(fmt.Sprintf("location: unknown backend %q (want ssh|taildrive)", loc.Backend), nil)
+		return tserr.ConfigErr(fmt.Sprintf("location: unknown backend %q (want ssh|taildrive)", loc.Backend), nil)
 	}
 	return nil
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,7 +13,33 @@ import (
 
 	"github.com/Ibtesam-Mahmood/tailvault/internal/backend"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/lock"
+	"github.com/Ibtesam-Mahmood/tailvault/internal/tserr"
 )
+
+// TestStatus_BadConfig_IsTVCFGExit2 proves the command boundary wraps a config
+// load/parse failure as TV-CFG-01 (exit bucket 2) per SPEC §5 / team-lead mandate.
+func TestStatus_BadConfig_IsTVCFGExit2(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, configName), "this is not valid toml = = =\n")
+	cwd, _ := os.Getwd()
+	t.Cleanup(func() { os.Chdir(cwd) })
+	if err := os.Chdir(root); err != nil {
+		t.Fatal(err)
+	}
+
+	r := newRootCmd()
+	r.SetOut(&bytes.Buffer{})
+	r.SetErr(&bytes.Buffer{})
+	r.SetArgs([]string{"status"})
+	err := r.Execute()
+	if err == nil {
+		t.Fatal("want a config error for malformed tailvault.toml")
+	}
+	var te *tserr.Error
+	if !errors.As(err, &te) || te.ExitCode() != 2 {
+		t.Errorf("want TV-CFG exit 2, got %v (ExitCodeFor=%d)", err, tserr.ExitCodeFor(err))
+	}
+}
 
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()

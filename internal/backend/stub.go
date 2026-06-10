@@ -148,6 +148,8 @@ func (b *FSBackend) List(_ context.Context, prefix string) ([]string, error) {
 
 // objMissing builds the TV-OBJ-01 error for a missing key, wrapping ErrNotExist
 // so both errors.Is(err, ErrNotExist) and errors.As(err, **tserr.Error) work.
+// The bare sha (not the "objects/" store key) is passed so the message matches
+// SPEC §5's "Expected blob <sha> missing".
 func objMissing(key string) error {
-	return tserr.ObjMissingErr(key, ErrNotExist)
+	return tserr.ObjMissingErr(strings.TrimPrefix(key, "objects/"), ErrNotExist)
 }

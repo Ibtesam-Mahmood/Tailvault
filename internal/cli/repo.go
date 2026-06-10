@@ -20,12 +20,6 @@ const (
 	lockName   = "tailvault.lock"
 )
 
-// cliCfgErr builds a config/precondition error (TV-CFG-01, exit bucket 2).
-// TODO(coder-ws-a): replace with tserr.ConfigErr once it lands.
-func cliCfgErr(cause string, err error) *tserr.Error {
-	return &tserr.Error{Code: tserr.Code("TV-CFG-01"), Cause: cause, Fix: "correct the configuration and retry", Err: err}
-}
-
 // findRepoRoot walks up from the current directory to the first directory that
 // contains a tailvault.toml, returning that directory.
 func findRepoRoot() (string, error) {
@@ -39,10 +33,21 @@ func findRepoRoot() (string, error) {
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return "", cliCfgErr("not a tailvault repo: no "+configName+" found in this or any parent directory", nil)
+			return "", tserr.ConfigErr("not a tailvault repo: no "+configName+" found in this or any parent directory", nil)
 		}
 		dir = parent
 	}
+}
+
+// loadConfig loads and validates tailvault.toml at the command boundary,
+// wrapping any parse/validation failure as a TV-CFG-01 config error (exit 2)
+// per SPEC §5. Leaf packages keep returning plain errors.
+func loadConfig(root string) (*config.Config, error) {
+	cfg, err := config.Load(filepath.Join(root, configName))
+	if err != nil {
+		return nil, tserr.ConfigErr("load "+configName, err)
+	}
+	return cfg, nil
 }
 
 // resolveBackend resolves the repo config's named location into a constructed
@@ -55,7 +60,7 @@ func resolveBackend(_ context.Context, cfg *config.Config) (backend.Backend, loc
 	}
 	loc, ok := reg.Locations[cfg.Storage.Location]
 	if !ok {
-		return nil, locations.Location{}, cliCfgErr("unknown storage location "+cfg.Storage.Location+" (not in locations.toml)", nil)
+		return nil, locations.Location{}, tserr.ConfigErr("unknown storage location "+cfg.Storage.Location+" (not in locations.toml)", nil)
 	}
 	base := path.Join(loc.BasePath, cfg.Storage.Subpath)
 	switch loc.Backend {
@@ -69,7 +74,7 @@ func resolveBackend(_ context.Context, cfg *config.Config) (backend.Backend, loc
 	case locations.BackendTaildrive:
 		return backend.NewTaildrive(base), loc, nil
 	default:
-		return nil, locations.Location{}, cliCfgErr("location "+cfg.Storage.Location+" has unknown backend", nil)
+		return nil, locations.Location{}, tserr.ConfigErr("location "+cfg.Storage.Location+" has unknown backend", nil)
 	}
 }
 
@@ -103,7 +108,7 @@ func whoisSelf(ctx context.Context) (string, error) {
 		addr = st.Self.IPs[0]
 	}
 	if addr == "" {
-		return "", cliCfgErr("no self address from tailscale status", nil)
+		return "", tserr.ConfigErr("no self address from tailscale status", nil)
 	}
 	return ts.Whois(ctx, addr)
 }

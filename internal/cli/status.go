@@ -12,9 +12,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Ibtesam-Mahmood/tailvault/internal/backend"
-	"github.com/Ibtesam-Mahmood/tailvault/internal/config"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/lock"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/status"
+	"github.com/Ibtesam-Mahmood/tailvault/internal/tserr"
 )
 
 func newStatusCmd() *cobra.Command {
@@ -28,7 +28,7 @@ func newStatusCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cfg, err := config.Load(filepath.Join(root, configName))
+			cfg, err := loadConfig(root)
 			if err != nil {
 				return err
 			}
@@ -66,12 +66,17 @@ func newStatusCmd() *cobra.Command {
 }
 
 // loadLockOrEmpty loads the lock, treating a missing file as an empty lock so
-// status/push work before the first push.
+// status/push work before the first push. A parse failure is wrapped as a
+// TV-CFG-01 config error (exit 2) at the command boundary per SPEC §5.
 func loadLockOrEmpty(path string) (*lock.Lock, error) {
 	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
 		return &lock.Lock{Version: 1}, nil
 	}
-	return lock.Load(path)
+	lk, err := lock.Load(path)
+	if err != nil {
+		return nil, tserr.ConfigErr("load "+lockName, err)
+	}
+	return lk, nil
 }
 
 // statBlobs Stats objects/<sha> for each pushed candidate (tree sha == lock sha)
