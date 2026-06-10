@@ -6,6 +6,14 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.29 — 2026-06-10
+
+Phase 3 — `verify` command (task-23, `internal/verify`).
+
+- Added `tailvault verify`: re-hashes blobs and cross-checks the lock — detects corruption
+  (digest ≠ key), missing objects (lock SHA absent on the node), and reports orphans;
+  history versions included.
+
 ## v0.0.28 — 2026-06-10
 
 Phase 3 — `revert` command (task-21, `internal/revert`).
