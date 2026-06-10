@@ -6,6 +6,25 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.41 — 2026-06-10
+
+Phase 3 — fix(push,pull,status): tombstone deleted-but-preserved entries; never
+resurrect them (team-lead's push↔gc ruling, option a). Closes the DESIGN §4 retention
+violation the integration suite surfaced: push previously dropped the lock entry for any
+deleted file, leaving a `preserve` blob unreferenced for a later `gc` to sweep (silent
+data loss).
+
+- **push**: when a deleted file's blob must survive (`preserve` set, or `auto_delete`
+  opted out — the exact complement of GC's mark-for-sweep condition `auto_delete && !preserve`)
+  keep a `Deleted=true` tombstone instead of dropping the entry, so the sha stays in GC's
+  keep/preserve set. Tombstones carry forward across pushes, are skipped as rename sources,
+  and a file reappearing at a tombstoned path resurrects into a fresh live entry.
+- **pull**: SKIP `Deleted` tombstones — a fresh clone or post-pull does NOT re-create the
+  deleted file (blob stays on the node, never fetched). Keeps the blob alive without
+  resurrecting the file.
+- **status.Classify**: a tombstone yields no row (not orphaned, not live).
+- **gc**: no code change (the sha is already covered by keep + preserve sets).
+
 ## v0.0.40 — 2026-06-10
 
 Phase 3 — lock: add `Entry.Deleted` tombstone field (additive) to enable the

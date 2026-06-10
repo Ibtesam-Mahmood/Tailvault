@@ -56,6 +56,25 @@ func TestClassify_States(t *testing.T) {
 	}
 }
 
+func TestClassify_SkipsTombstones(t *testing.T) {
+	// A tombstone (Deleted) entry for a removed-but-preserved file produces no
+	// row — it is neither orphaned nor a live file. A file reappearing at a
+	// tombstoned path reads as local-only (needs a push to resurrect the entry).
+	tree := map[string]string{"back.pdf": "newsha"}
+	lk := locked(
+		lock.Entry{Path: "gone.pdf", SHA256: "deadsha", Preserve: true, Deleted: true}, // tombstone: no row
+		lock.Entry{Path: "back.pdf", SHA256: "oldsha", Preserve: true, Deleted: true},  // resurrected
+	)
+	rows := Classify(tree, lk, nil)
+
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want 1: %+v", len(rows), rows)
+	}
+	if rows[0].Path != "back.pdf" || rows[0].State != LocalOnly || rows[0].SHA != "newsha" {
+		t.Errorf("row = %+v, want back.pdf local-only at the tree sha", rows[0])
+	}
+}
+
 func TestClassify_BlobMissingMarker(t *testing.T) {
 	tree := map[string]string{"a.pdf": "bbbb"}
 	lk := locked(lock.Entry{Path: "a.pdf", SHA256: "bbbb"})

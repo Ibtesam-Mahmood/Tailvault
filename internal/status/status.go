@@ -38,7 +38,10 @@ func Classify(treeSHA map[string]string, locked map[string]lock.Entry, blobPrese
 
 	for path, sha := range treeSHA {
 		e, ok := locked[path]
-		if !ok {
+		// A tombstone is not a live entry: a file reappearing at a tombstoned path
+		// reads as local-only (it needs a push to resurrect the entry), never as
+		// pushed against the dead sha.
+		if !ok || e.Deleted {
 			rows = append(rows, Row{Path: path, State: LocalOnly, SHA: sha})
 			continue
 		}
@@ -54,6 +57,12 @@ func Classify(treeSHA map[string]string, locked map[string]lock.Entry, blobPrese
 	}
 
 	for path, e := range locked {
+		// A tombstone (Deleted) is a deliberately retained entry for a removed
+		// file whose blob is preserved — it is not a live file and not an orphan,
+		// so it produces no status row.
+		if e.Deleted {
+			continue
+		}
 		if _, ok := treeSHA[path]; !ok {
 			rows = append(rows, Row{Path: path, State: Orphaned, SHA: e.SHA256})
 		}

@@ -158,6 +158,52 @@ func TestPull_NodeDown_AbortsBeforeFetch(t *testing.T) {
 	}
 }
 
+// TestPull_Tombstone_NoResurrection is the qa-review [4] invariant: a fresh
+// clone whose committed lock carries a tombstone (Deleted=true) for a
+// preserve-deleted file must NOT recreate that file. The blob may still be on the
+// node (kept for GC), but pull must never fetch or materialise it — otherwise the
+// preserve-GC fix would trade silent data loss for silent un-deletion.
+func TestPull_Tombstone_NoResurrection(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir() // fresh clone: nothing materialised yet
+	live := []byte("live-bytes")
+	ls := sha(live)
+	gone := []byte("deleted-but-preserved")
+	gs := sha(gone)
+
+	b := backend.NewFSBackend(t.TempDir())
+	_ = b.Put(ctx, "objects/"+ls, bytes.NewReader(live))
+	_ = b.Put(ctx, "objects/"+gs, bytes.NewReader(gone)) // blob still preserved on node
+
+	writePointer(t, filepath.Join(root, "live.pdf"), ls)
+	lk := &lock.Lock{Version: 1, Entries: []lock.Entry{
+		{Path: "live.pdf", SHA256: ls, Location: "home-pi"},
+		{Path: "gone.pdf", SHA256: gs, Location: "home-pi", Preserve: true, Deleted: true},
+	}}
+
+	res, err := Run(ctx, root, lk, okDeps(b))
+	if err != nil {
+		t.Fatalf("pull: %v", err)
+	}
+	// The live file materialises; the tombstone is neither fetched nor reported.
+	if len(res.Fetched) != 1 || res.Fetched[0] != "live.pdf" {
+		t.Errorf("Fetched = %v, want only live.pdf", res.Fetched)
+	}
+	for _, p := range append(res.Fetched, res.Skipped...) {
+		if p == "gone.pdf" {
+			t.Errorf("tombstone gone.pdf appeared in pull result %v", res)
+		}
+	}
+	// The deleted file must NOT exist on disk after pull.
+	if _, statErr := os.Stat(filepath.Join(root, "gone.pdf")); !os.IsNotExist(statErr) {
+		t.Errorf("gone.pdf was resurrected (stat err = %v), want it absent", statErr)
+	}
+	// And its blob was never requested from the node.
+	if b.Gets != 1 {
+		t.Errorf("Gets = %d, want 1 (only live.pdf; tombstone blob never fetched)", b.Gets)
+	}
+}
+
 func TestPull_MultipleEager_AndPartialStopsClean(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()

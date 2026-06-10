@@ -81,7 +81,10 @@ func Run(ctx context.Context, root string, cfg *config.Config, lk *lock.Lock, d 
 		sha := treeSHA[path]
 
 		// (a) Unchanged: identical sha at the same path → no-op, no Stat/Put.
-		if old, ok := oldByPath[path]; ok && old.SHA256 == sha {
+		// A tombstone (Deleted) is NOT unchanged — a file reappearing at a
+		// tombstoned path must fall through to (c) so a fresh live entry
+		// (Deleted=false, freshly re-evaluated preserve) is written.
+		if old, ok := oldByPath[path]; ok && old.SHA256 == sha && !old.Deleted {
 			newEntries[path] = old
 			continue
 		}
@@ -169,9 +172,30 @@ func Run(ctx context.Context, root string, cfg *config.Config, lk *lock.Lock, d 
 			continue
 		}
 		old := oldByPath[oldPath]
+
+		// An existing tombstone: carry it forward unchanged so its preserved blob
+		// stays in gc's keep/preserve set across every subsequent push. It was
+		// already reported Dropped on the push that first created it.
+		if old.Deleted {
+			newEntries[oldPath] = old
+			continue
+		}
+
 		res.Dropped = append(res.Dropped, oldPath)
 		if cfg.Rules.AutoDelete && !old.Preserve {
+			// Auto-delete on and not preserved: reclaim the blob (mark for sweep).
 			res.MarkedGC = append(res.MarkedGC, old.SHA256)
+		} else {
+			// The blob must survive (preserve set, or auto_delete opted out) even
+			// though the file is gone. Keep a TOMBSTONE so gc's keep-set
+			// (ReferencedSHAs) and preserve-set still reference the sha. Dropping
+			// the entry here is what previously let a later sweep delete a
+			// preserved blob — silent data loss against DESIGN §4. This branch is
+			// the exact complement of the mark-for-GC condition above, so a blob is
+			// never both GC-marked and orphaned from the keep-set.
+			t := old
+			t.Deleted = true
+			newEntries[oldPath] = t
 		}
 	}
 
@@ -252,6 +276,11 @@ func renameSource(oldByPath map[string]lock.Entry, treeSHA map[string]string, ha
 	var cands []string
 	for p, e := range oldByPath {
 		if e.SHA256 != sha || handled[p] {
+			continue
+		}
+		// A tombstone is not a live file and cannot be the source of a move — its
+		// entry is carried forward as-is by the deletion loop.
+		if e.Deleted {
 			continue
 		}
 		if _, stillThere := treeSHA[p]; stillThere {

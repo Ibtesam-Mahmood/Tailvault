@@ -16,6 +16,7 @@ import (
 
 	"github.com/Ibtesam-Mahmood/tailvault/internal/backend"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/config"
+	"github.com/Ibtesam-Mahmood/tailvault/internal/gc"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/history"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/lock"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/tserr"
@@ -211,6 +212,149 @@ func TestPush_Deletion_MarksGC_UnlessPreserve(t *testing.T) {
 	}
 	if b.Deletes != 0 {
 		t.Errorf("Deletes = %d, want 0 (mark-only; sweep is task-16)", b.Deletes)
+	}
+
+	// The preserved blob must NOT be lost from the lock: push keeps a tombstone so
+	// gc's keep/preserve set still references sha-k. d.pdf (auto-deleted) is gone.
+	lk2, err := lock.Load(filepath.Join(root, "tailvault.lock"))
+	if err != nil {
+		t.Fatalf("lock load: %v", err)
+	}
+	if len(lk2.Entries) != 1 {
+		t.Fatalf("lock entries = %+v, want only the keep.pdf tombstone", lk2.Entries)
+	}
+	tomb := lk2.Entries[0]
+	if tomb.Path != "keep.pdf" || tomb.SHA256 != "sha-k" || !tomb.Deleted || !tomb.Preserve {
+		t.Errorf("tombstone = %+v, want keep.pdf/sha-k Deleted&Preserve", tomb)
+	}
+}
+
+// The end-to-end invariant the team-lead flagged: a preserved file's blob must
+// survive gc after the file is deleted and pushed. Drive push, then run the gc
+// keep/preserve planner over the resulting lock and assert the blob is not
+// eligible for sweep.
+func TestPush_DeletedPreserved_BlobSurvivesGC(t *testing.T) {
+	ctx := context.Background()
+	root, cfg := repo(t, map[string]string{}) // file already deleted from the tree
+	b := backend.NewFSBackend(t.TempDir())
+	// Seed the preserved blob on the node, as a prior push would have.
+	if err := b.Put(ctx, "objects/sha-k", bytes.NewReader([]byte("kept"))); err != nil {
+		t.Fatal(err)
+	}
+	lk := &lock.Lock{Version: 1, Entries: []lock.Entry{
+		{Path: "keep.pdf", SHA256: "sha-k", Size: 4, Location: "home-pi", Preserve: true},
+	}}
+
+	if _, err := Run(ctx, root, cfg, lk, deps(b), Options{}); err != nil {
+		t.Fatalf("push: %v", err)
+	}
+	lk2, err := lock.Load(filepath.Join(root, "tailvault.lock"))
+	if err != nil {
+		t.Fatalf("lock load: %v", err)
+	}
+
+	keep := gc.BuildKeepSet(map[string]*lock.Lock{"HEAD": lk2})
+	pres := gc.BuildPreserveSet(map[string]*lock.Lock{"HEAD": lk2})
+	plan := gc.PlanSweep([]string{"objects/sha-k"}, keep, pres)
+	if len(plan.Eligible) != 0 {
+		t.Errorf("plan.Eligible = %v, want empty — preserved blob must survive the sweep", plan.Eligible)
+	}
+}
+
+// Auto-delete OFF: deleting a non-preserved file must NOT mark its blob for GC,
+// and must keep a tombstone so the blob's keep-set reference survives (you opted
+// out of reclamation). This is the complement-condition coverage.
+func TestPush_Deletion_AutoDeleteOff_Tombstones(t *testing.T) {
+	ctx := context.Background()
+	root, cfg := repo(t, map[string]string{})
+	cfg.Rules.AutoDelete = false
+	b := backend.NewFSBackend(t.TempDir())
+	lk := &lock.Lock{Version: 1, Entries: []lock.Entry{
+		{Path: "d.pdf", SHA256: "sha-d", Size: 1, Location: "home-pi"}, // not preserved
+	}}
+
+	res, err := Run(ctx, root, cfg, lk, deps(b), Options{})
+	if err != nil {
+		t.Fatalf("push: %v", err)
+	}
+	if len(res.MarkedGC) != 0 {
+		t.Errorf("MarkedGC = %v, want none (auto_delete off keeps the blob)", res.MarkedGC)
+	}
+	lk2, err := lock.Load(filepath.Join(root, "tailvault.lock"))
+	if err != nil {
+		t.Fatalf("lock load: %v", err)
+	}
+	if len(lk2.Entries) != 1 || !lk2.Entries[0].Deleted {
+		t.Errorf("entries = %+v, want a single d.pdf tombstone", lk2.Entries)
+	}
+}
+
+// A tombstone persists across pushes: a second push with the file still absent
+// carries the entry forward unchanged (and does not re-report it as Dropped).
+func TestPush_Tombstone_PersistsAcrossPushes(t *testing.T) {
+	ctx := context.Background()
+	root, cfg := repo(t, map[string]string{})
+	b := backend.NewFSBackend(t.TempDir())
+	lk := &lock.Lock{Version: 1, Entries: []lock.Entry{
+		{Path: "keep.pdf", SHA256: "sha-k", Size: 1, Location: "home-pi", Preserve: true},
+	}}
+
+	if _, err := Run(ctx, root, cfg, lk, deps(b), Options{}); err != nil {
+		t.Fatalf("push #1: %v", err)
+	}
+	lk2, err := lock.Load(filepath.Join(root, "tailvault.lock"))
+	if err != nil {
+		t.Fatalf("lock load #1: %v", err)
+	}
+
+	res2, err := Run(ctx, root, cfg, lk2, deps(b), Options{})
+	if err != nil {
+		t.Fatalf("push #2: %v", err)
+	}
+	if len(res2.Dropped) != 0 {
+		t.Errorf("push #2 Dropped = %v, want none (already tombstoned)", res2.Dropped)
+	}
+	lk3, err := lock.Load(filepath.Join(root, "tailvault.lock"))
+	if err != nil {
+		t.Fatalf("lock load #2: %v", err)
+	}
+	if len(lk3.Entries) != 1 || !lk3.Entries[0].Deleted || lk3.Entries[0].SHA256 != "sha-k" {
+		t.Errorf("entries = %+v, want the keep.pdf tombstone preserved", lk3.Entries)
+	}
+}
+
+// Resurrection: a file reappearing at a tombstoned path is re-pushed into a fresh
+// LIVE entry (Deleted cleared), with no transfer when the blob is still present.
+func TestPush_Tombstone_ResurrectedFile(t *testing.T) {
+	ctx := context.Background()
+	content := "resurrected"
+	root, cfg := repo(t, map[string]string{"keep.pdf": content})
+	b := backend.NewFSBackend(t.TempDir())
+	// Blob already on the node (preserved through the deletion); tombstone in lock.
+	if err := b.Put(ctx, "objects/"+sha([]byte(content)), bytes.NewReader([]byte(content))); err != nil {
+		t.Fatal(err)
+	}
+	startPuts := b.Puts
+	lk := &lock.Lock{Version: 1, Entries: []lock.Entry{
+		{Path: "keep.pdf", SHA256: sha([]byte(content)), Size: int64(len(content)), Location: "home-pi", Preserve: true, Deleted: true},
+	}}
+
+	res, err := Run(ctx, root, cfg, lk, deps(b), Options{})
+	if err != nil {
+		t.Fatalf("push: %v", err)
+	}
+	if b.Puts != startPuts {
+		t.Errorf("Puts advanced by %d, want 0 (blob already present → dedup)", b.Puts-startPuts)
+	}
+	if len(res.MarkedGC) != 0 {
+		t.Errorf("MarkedGC = %v, want none on resurrection", res.MarkedGC)
+	}
+	lk2, err := lock.Load(filepath.Join(root, "tailvault.lock"))
+	if err != nil {
+		t.Fatalf("lock load: %v", err)
+	}
+	if len(lk2.Entries) != 1 || lk2.Entries[0].Deleted {
+		t.Errorf("entries = %+v, want a single LIVE keep.pdf entry (Deleted cleared)", lk2.Entries)
 	}
 }
 

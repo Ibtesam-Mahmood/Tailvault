@@ -45,6 +45,13 @@ func Run(ctx context.Context, root string, lk *lock.Lock, d Deps) (Result, error
 	}
 
 	for _, e := range lk.Entries {
+		// A tombstone (Deleted) keeps its blob alive for GC but the file was
+		// deliberately removed — NEVER materialise it, or a fresh clone / pull
+		// would silently resurrect a file the user deleted (the opposite-direction
+		// DESIGN §4 correctness bug). Skip without fetching.
+		if e.Deleted {
+			continue
+		}
 		full := filepath.Join(root, filepath.FromSlash(e.Path))
 		if materializedAndCorrect(full, e.SHA256) {
 			res.Skipped = append(res.Skipped, e.Path)
