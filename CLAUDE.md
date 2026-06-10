@@ -50,7 +50,9 @@ phase calls for it.
 
 ## Planned structure (Go — not yet created)
 
-Per `proposal.md`, the implementation will be a Go + Cobra CLI:
+The four file schemas, the error catalogue, and the resolved Open Questions are
+frozen in [`SPEC.md`](./SPEC.md) — the normative contract every implementation
+task cites. Per `proposal.md`, the implementation will be a Go + Cobra CLI:
 
 ```
 cmd/tailvault/main.go      # entry point
