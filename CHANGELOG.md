@@ -6,6 +6,25 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.43 — 2026-06-10
+
+Phase 3 — integration: assert the preserve-deletion fix end-to-end (closes the wave).
+Flips the former documented-gap scenario to assert correct behavior and adds the
+no-resurrection regression (qa-review check [4]):
+
+- `TestScenario_DeleteAutoDeleteAndPreserve` — deleting both a plain and a `preserve`
+  file: the plain blob is swept, the `preserve` blob **survives** (its sha stays in GC's
+  keep+preserve set via the `Deleted=true` tombstone).
+- `TestScenario_AutoDeleteOff_DeleteKeepsBlob` — an `auto_delete=off` deletion is
+  tombstoned and its blob survives (the second survival case).
+- `TestScenario_PreserveDelete_NoResurrectionOnPull` — a fresh clone + pull does NOT
+  re-create the tombstoned file (the no-resurrection invariant, against pull's `Deleted`
+  skip).
+
+Integration-test-only; no production code. Smudge confirmed lock-independent (decodes
+the git-fed pointer from stdin, never iterates lock entries; git never smudges a
+not-in-tree file), so no tombstone-skip is needed there.
+
 ## v0.0.42 — 2026-06-10
 
 Phase 3 — lock merge: same-sha resolution is live-beats-tombstone. In `Merge`'s
