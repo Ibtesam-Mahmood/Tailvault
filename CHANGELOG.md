@@ -6,6 +6,14 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.26 — 2026-06-10
+
+Phase 3 — git hooks (task-19, `internal/hooks`).
+
+- Added `InstallHooks`: installs pre-push / post-merge / post-checkout hooks (honouring
+  `core.hooksPath`), embedding an absolute binary path, forwarding the pre-push exit code,
+  idempotent, and warning on a pre-existing foreign hook.
+
 ## v0.0.25 — 2026-06-10
 
 Phase 3 — `init` command (task-18, `internal/cli/init.go`).
