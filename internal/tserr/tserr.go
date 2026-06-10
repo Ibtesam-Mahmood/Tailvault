@@ -13,6 +13,7 @@ import (
 type Code string
 
 const (
+	ConfigBad       Code = "TV-CFG-01"  // bad/missing tailvault.toml or precondition
 	NetNotRunning   Code = "TV-NET-01"  // Tailscale not running / not in PATH
 	NetNotLoggedIn  Code = "TV-NET-02"  // not logged into the tailnet
 	NodeOffline     Code = "TV-NODE-01" // storage node offline/unreachable
@@ -56,6 +57,18 @@ func (e *Error) ExitCode() int {
 
 // Helper constructors keep call sites terse and the user-facing cause/fix text
 // consistent across packages. Only the variable bits (node name, sha) vary.
+
+// ConfigErr reports a config/precondition failure (bad or missing
+// tailvault.toml, unparseable input). Maps to exit bucket 2. The cause is
+// caller-supplied since config problems are varied.
+func ConfigErr(cause string, err error) *Error {
+	return &Error{
+		Code:  ConfigBad,
+		Cause: cause,
+		Fix:   "check tailvault.toml and re-run",
+		Err:   err,
+	}
+}
 
 // NetNotRunningErr reports that the local Tailscale daemon is unreachable.
 func NetNotRunningErr(err error) *Error {

@@ -16,6 +16,7 @@ func TestExitCodeBuckets(t *testing.T) {
 		{NodeOffline, 4},
 		{NodeNotWritable, 4},
 		{ObjMissing, 5},
+		{ConfigBad, 2},             // config/precondition bucket
 		{Code("TV-UNKNOWN-99"), 2}, // unmapped code fails safe as precondition
 	}
 	for _, c := range cases {
