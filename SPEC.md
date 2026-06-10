@@ -259,23 +259,24 @@ otherwise-unclassified error; Task 07 owns the code→exit map.)
 
 ## 7. Size-unit binding (`min_size`)
 
-`min_size` is genuinely ambiguous between decimal (MB = 1000²) and binary
-(MiB = 1024²) units. **Frozen binding for v1** — Task 03 (`internal/config`)
-implements and back-fills the test vectors here:
+**Frozen binding for v1 (decided + implemented by Task 03, `internal/config`):**
+tailvault interprets **all** size suffixes as **binary** units (powers of 1024).
+This is a single rule for every suffix and matches the proposal's intuition that
+"5 MB" is the on-disk threshold.
 
-- Decimal SI suffixes are powers of **1000**: `KB = 1000`, `MB = 1000²`,
-  `GB = 1000³`.
-- Binary IEC suffixes are powers of **1024**: `KiB = 1024`, `MiB = 1024²`,
-  `GiB = 1024³`.
-- A bare `B` (or no suffix) is bytes. Suffix matching is case-insensitive; an
-  optional single space between number and suffix is allowed.
-- Therefore the default `"5MB"` parses to **5 000 000 bytes** (decimal), *not*
-  5 242 880.
+- `B` (or no suffix) = bytes.
+- `KB = 1024`, `MB = 1024²`, `GB = 1024³`, `TB = 1024⁴`.
+- IEC spellings are accepted as explicit synonyms for the same values:
+  `KiB = KB`, `MiB = MB`, `GiB = GB`, `TiB = TB`.
+- Matching is case-insensitive; an optional single space between number and
+  suffix is allowed; a fractional number is permitted and truncated to whole
+  bytes (e.g. `"1.5MB" → 1 572 864`).
+- Therefore the default `"5MB"` parses to **5 242 880 bytes** (= 5 × 1024²).
 
-> **TODO (Task 03):** confirm this binding against the chosen size-parsing
-> implementation, add the canonical test vectors (`"5MB" → 5000000`,
-> `"5MiB" → 5242880`, `"512KB"`, `"1GiB"`, bare-bytes, whitespace, case), and
-> back-fill any refinement here so config tests have one true answer.
+Canonical test vectors (in `internal/config/size_test.go`):
+`"5MB" → 5242880`, `"5MiB" → 5242880`, `"512KB" → 524288`, `"1GiB" → 1073741824`,
+`"1048576" → 1048576`, `"1.5MB" → 1572864`; empty / garbage / missing-number /
+negative all error.
 
 ---
 
