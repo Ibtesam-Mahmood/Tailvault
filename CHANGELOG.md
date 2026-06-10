@@ -6,6 +6,15 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.37 — 2026-06-10
+
+Phase 3 — document the accepted Taildrive unmounted-share limitation (task-22, R-B deviation).
+
+- Doc-comment on the `Taildrive` backend: the caller must ensure the share is mounted. An
+  absent `base_path` hard-fails TV-NODE-01, but an existing-but-unmounted mountpoint is not
+  detected (a write would hit local disk). Marker-file/mount-state detection is a recommended
+  follow-up. Comment-only, no behaviour change. (team-lead-accepted deviation, condition 1a.)
+
 ## v0.0.36 — 2026-06-10
 
 Phase 3 — setup/locations/taildrive hardening (task-10/11/22 fix, R-B).

@@ -20,6 +20,13 @@ import (
 //
 // root is base_path joined with the repo subpath — an ALREADY-mounted local
 // path; mounting the share is the user/OS's job, out of scope here.
+//
+// LIMITATION (v1, accepted deviation): the caller must ensure the share is
+// mounted. The command-level preflight (cli.preflightNode) hard-fails an ABSENT
+// mountpoint as TV-NODE-01, but an existing-but-unmounted mountpoint is NOT
+// detected — in that case writes would land on local disk. Robust live-mount
+// detection (a sentinel marker file, or a platform mountpoint check) is a
+// recommended follow-up; SSH is the hardened MVP backend.
 type Taildrive struct {
 	Root string
 }
