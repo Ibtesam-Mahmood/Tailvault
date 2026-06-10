@@ -114,7 +114,17 @@ func fetchVerified(ctx context.Context, be backend.Backend, dest, wantSHA string
 	got := hex.EncodeToString(h.Sum(nil))
 	if got != wantSHA {
 		os.Remove(tmpName)
-		return tserr.ObjMissingErr(wantSHA, fmt.Errorf("sha mismatch: want %s, got %s (corrupt blob)", wantSHA, got))
+		// Corrupt (present but wrong bytes) is TV-OBJ-01 / exit 5 like "missing",
+		// but the user-facing cause + fix MUST differ: a mismatch points at
+		// `verify`/re-store, not re-push from another clone (task-15 gotcha,
+		// SPEC §5). ObjMissingErr hardcodes a "missing" cause, so build the
+		// corruption variant explicitly.
+		return &tserr.Error{
+			Code:  tserr.ObjMissing,
+			Cause: fmt.Sprintf("blob %s is corrupt: sha mismatch (got %s)", wantSHA, got),
+			Fix:   "run `tailvault verify` or re-store the blob",
+			Err:   fmt.Errorf("sha mismatch: want %s, got %s", wantSHA, got),
+		}
 	}
 	return os.Rename(tmpName, dest)
 }

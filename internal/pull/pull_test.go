@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Ibtesam-Mahmood/tailvault/internal/backend"
@@ -113,6 +114,17 @@ func TestPull_CorruptBlob_Mismatch_NotOverwritten(t *testing.T) {
 	var te *tserr.Error
 	if !errors.As(err, &te) || te.Code != tserr.ObjMissing {
 		t.Fatalf("want TV-OBJ-01 mismatch, got %v", err)
+	}
+	// The user-facing message must name corruption, NOT "missing", and point at
+	// verify/re-store — a corrupt blob has a different fix than a gone one.
+	if !strings.Contains(te.Error(), "corrupt") && !strings.Contains(te.Error(), "mismatch") {
+		t.Errorf("mismatch message should name corruption, got %q", te.Error())
+	}
+	if strings.Contains(te.Cause, "missing") {
+		t.Errorf("mismatch cause must not say 'missing' (misleads remediation): %q", te.Cause)
+	}
+	if !strings.Contains(te.Fix, "verify") {
+		t.Errorf("mismatch fix should point at verify/re-store, got %q", te.Fix)
 	}
 	got, _ := os.ReadFile(filepath.Join(root, "a.pdf"))
 	if !bytes.Contains(got, []byte("tailvault.v1")) {
