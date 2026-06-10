@@ -6,6 +6,15 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.30 — 2026-06-10
+
+Phase 3 — lock merge driver (task-24, `internal/lock/merge.go`).
+
+- Added `lock.Merge`, a per-path union 3-way merge (newest `pushed_at` wins on a SHA
+  conflict, deterministic tiebreak, `versions[]` unioned, canonical byte-identical
+  output), exposed as the hidden `__merge-lock` command and registered as a git merge
+  driver by `init`. Covered by a real `git merge` integration test.
+
 ## v0.0.29 — 2026-06-10
 
 Phase 3 — `verify` command (task-23, `internal/verify`).
