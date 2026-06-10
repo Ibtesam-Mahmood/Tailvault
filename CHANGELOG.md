@@ -6,6 +6,15 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.38 — 2026-06-10
+
+Phase 3 — cross-cutting tests, docs, and CI (task-25). Adds a `//go:build integration`
+end-to-end suite (`internal/integration/`) covering the 7 proposal scenarios over a
+taildrive temp-dir node plus a self-skipping SSH-localhost round-trip; a user-facing
+`docs/usage.md` (install → init/setup → track → push/pull → recovery/rollback + error
+codes, including both accepted deviation notes); and `.github/workflows/ci.yml`
+(build + vet + gofmt-guard + unit + `-tags integration`). No changes to existing code.
+
 ## v0.0.37 — 2026-06-10
 
 Phase 3 — document the accepted Taildrive unmounted-share limitation (task-22, R-B deviation).
