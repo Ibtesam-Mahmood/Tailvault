@@ -6,6 +6,16 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.6 — 2026-06-10
+
+Phase 1 — `tailvault.toml` config (task-03, `internal/config`).
+
+- Added `config.Config` (storage + rules incl. per-pattern overrides), `Load`,
+  `Validate`, and `Write`, plus `ParseSize` with **binary** units (`5MB` = 5242880;
+  IEC synonyms accepted). Table-driven tests for round-trip, size vectors, and
+  validation errors.
+- Resolves SPEC §7 size-unit binding to binary (see DEVIATIONS).
+
 ## v0.0.5 — 2026-06-10
 
 Phase 1 — structured error model (task-07, `internal/tserr`).
