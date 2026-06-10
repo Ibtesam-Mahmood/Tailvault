@@ -6,6 +6,15 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.20 — 2026-06-10
+
+Phase 2 — push (task-14, `internal/push`).
+
+- Added `push.Run(ctx, root, cfg, lk, Deps, Options)` — the critical-path push with
+  fully injectable `Deps` (Backend, Preflight, Whois, GitIdentity, Now), preflight-first
+  so an unreachable node fails before any partial write. Leaves a `TODO(task-20, WS-C)`
+  seam for history-on version append.
+
 ## v0.0.19 — 2026-06-10
 
 Phase 2 — Taildrive backend (task-22, `internal/backend/taildrive.go`).
