@@ -12,7 +12,7 @@ Opt-in version history for files that want it, plus `revert`.
       node instead of the single-current-ref default.
 - [ ] History-on blobs are exempt from auto-delete of superseded versions.
 - [ ] `tailvault revert <path> <sha>` repoints a file to an older blob and updates
-      `vault.lock`.
+      `tailvault.lock`.
 - [ ] Tests: enable history, push three versions, revert to the first.
 
 ## References

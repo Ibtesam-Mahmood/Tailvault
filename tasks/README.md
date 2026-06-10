@@ -12,7 +12,7 @@ See [`../proposal.md`](../proposal.md) for the full rationale and
 
 | Phase | File | Block goal | Est. |
 | --- | --- | --- | --- |
-| 0 | [`task-00-decisions-spec-freeze.md`](./task-00-decisions-spec-freeze.md) | Resolve open questions; freeze `vault.toml` / `vault.lock` / pointer schemas. | 0.5 d |
+| 0 | [`task-00-decisions-spec-freeze.md`](./task-00-decisions-spec-freeze.md) | Resolve open questions; freeze `tailvault.toml` / `tailvault.lock` / pointer schemas. | 0.5 d |
 | 1 | [`task-01-foundation.md`](./task-01-foundation.md) | Go module + Cobra CLI; config/lock parse/write; rule engine. | 2 d |
 | 2 | [`task-02-backend-ssh.md`](./task-02-backend-ssh.md) | Backend interface; SSH impl; Tailscale liveness checks. | 2 d |
 | 3 | [`task-03-core-engine.md`](./task-03-core-engine.md) | `track`, `status`, `push` (upload/dedup/lock), `pull`. | 3 d |

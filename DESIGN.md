@@ -128,9 +128,9 @@ retention/branch policy.
 ## 6. Proposed surfaces (sketch — not final)
 
 ### 6.1 Files committed to the repo
-- `vault.toml` — project config: backend choice, location ref, size threshold,
+- `tailvault.toml` — project config: backend choice, location ref, size threshold,
   include/exclude globs, per-file/per-pattern `history` and `preserve` flags.
-- `vault.lock` — path → current sha, location, pushed-at, pusher; the source of
+- `tailvault.lock` — path → current sha, location, pushed-at, pusher; the source of
   truth for what's stored and when.
 - `.gitattributes` — registers the `clean`/`smudge` filter for tracked paths.
 
@@ -149,7 +149,7 @@ retention/branch policy.
 
 ### 6.4 CLI verbs (sketch)
 ```
-tailvault init                 # write vault.toml + .gitattributes
+tailvault init                 # write tailvault.toml + .gitattributes
 tailvault location add <name>  # register a tailnode storage target (user-level)
 tailvault track <glob>         # mark paths/patterns as vault-managed
 tailvault status               # what's local-only / pushed / drifted / orphaned
@@ -185,7 +185,7 @@ backend** is the only thing that satisfies the full list.
 1. **Per-branch GC algorithm** — how to decide a blob is safe to delete when
    multiple branches (and remotes) may reference it. Reference-count across
    branch tips? Mark-and-sweep from all refs?
-2. **Lock conflict handling** — `vault.lock` is committed, so two clients can
+2. **Lock conflict handling** — `tailvault.lock` is committed, so two clients can
    produce merge conflicts. Need a deterministic merge (per-path, last-writer or
    union) or a lock format that merges cleanly.
 3. **Backend round 1** — start with SSH (reliable at 1 GB) or Taildrive (the
@@ -254,6 +254,6 @@ Only once the folder model becomes the bottleneck. Concretely:
 
 ## 10. Next step
 
-Turn this into a formal **design spec**: exact `vault.toml` / `vault.lock`
+Turn this into a formal **design spec**: exact `tailvault.toml` / `tailvault.lock`
 schemas, the push/pull/GC algorithms in pseudocode, the storage layout, and the
 revert flow — then a task breakdown. No code until the spec is reviewed.

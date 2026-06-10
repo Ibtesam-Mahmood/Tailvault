@@ -6,6 +6,22 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.2 — 2026-06-10
+
+Spec refinement (no code yet).
+
+- Renamed the repo-committed config/state files to `tailvault.toml` /
+  `tailvault.lock` (from `vault.*`) across `proposal.md`, `DESIGN.md`, `CLAUDE.md`,
+  and the task backlog.
+- Specified **interactive setup + node discovery from the local Tailscale
+  session** (`tailscale status --json`, pick-list + manual fallback, no Tailscale
+  login or stored credentials); API/OAuth discovery is opt-in and deferred to
+  Future. Folded into Phase 1 (`task-01`) and recorded the decision in `issue-01`.
+- Specified a **structured error model**: typed conditions with stable codes
+  (`TV-NET-*`, `TV-NODE-*`, `TV-OBJ-*`) + bucketed exit codes, preflight-first so
+  an unreachable node fails clearly and leaves no partial state. Folded into
+  Phase 2 (`task-02`); error-code catalogue added to the Phase 0 freeze.
+
 ## v0.0.1 — 2026-06-10
 
 Project bootstrap.

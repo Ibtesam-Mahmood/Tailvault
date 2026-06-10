@@ -19,9 +19,16 @@ implementation can begin without churn.
   - Q6 Pointer resolution → eager fetch on `post-checkout`
   - Q7 Identity stamp → `tailscale whois`, fall back to git
   - Q8 Scope → **MVP first** (Phases 0–5), then iterate
-- [ ] `vault.toml` schema frozen (fields, defaults, validation rules).
-- [ ] `vault.lock` schema frozen (entry fields, ordering, canonical form).
+  - Q9 Node discovery → read the **local Tailscale session** (`tailscale status
+    --json`) for a pick-list + manual fallback; **no API login** in v1 (opt-in,
+    Future). See [`issue-01-interactive-setup-node-discovery.md`](./issue-01-interactive-setup-node-discovery.md).
+  - Q10 Error model → typed conditions with stable codes (`TV-NET/NODE/OBJ-*`) +
+    bucketed exit codes; preflight-first so node-down leaves no partial state.
+- [ ] `tailvault.toml` schema frozen (fields, defaults, validation rules).
+- [ ] `tailvault.lock` schema frozen (entry fields, ordering, canonical form).
 - [ ] Pointer file format frozen (line format, version tag).
+- [ ] Error-code catalogue frozen (code → cause → fix → exit code).
+- [ ] `locations.toml` schema frozen (incl. fields filled by discovery).
 - [ ] Schemas captured as a short `SPEC.md` (or a `DESIGN.md` addendum).
 
 ## References

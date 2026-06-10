@@ -7,7 +7,7 @@ aligned with the frozen design.
 
 A Tailscale-aware, content-addressed large-file storage CLI that syncs with
 `git push` / `git pull`. Real bytes live in a content-addressed folder on a
-Tailscale node; the repo carries only small pointer files and a `vault.lock`.
+Tailscale node; the repo carries only small pointer files and a `tailvault.lock`.
 A **clean** alternative to Git LFS (not a wrapper) using git-native
 filter/hooks. History is **off by default** (single current ref per file),
 diffs/deletes are still tracked, auto-delete is **on** by default, all retention
@@ -25,7 +25,7 @@ phase calls for it.
 
 - [`proposal.md`](./proposal.md) — formal proposal: architecture, CLI surface,
   9-phase plan, effort estimates, open questions with recommendations.
-- [`DESIGN.md`](./DESIGN.md) — the golden design dump: `vault.toml` / `vault.lock`
+- [`DESIGN.md`](./DESIGN.md) — the golden design dump: `tailvault.toml` / `tailvault.lock`
   / pointer schemas, retention model, Tailscale leverage, rejected options.
 - [`CONTRIBUTING.md`](./CONTRIBUTING.md) — versioning, task/issue/PR workflow.
 - [`tasks/README.md`](./tasks/README.md) — phase → block map and critical path.
@@ -54,8 +54,9 @@ Per `proposal.md`, the implementation will be a Go + Cobra CLI:
 
 ```
 cmd/tailvault/main.go      # entry point
-internal/config/           # vault.toml parse/validate
-internal/lock/             # vault.lock parse/write + merge driver
+internal/config/           # tailvault.toml parse/validate
+internal/lock/             # tailvault.lock parse/write + merge driver
+internal/tserr/            # structured error codes (TV-NET/NODE/OBJ) + exit map
 internal/rules/            # min_size + include/exclude glob engine
 internal/backend/          # Backend interface + ssh, taildrive impls
 internal/pointer/          # pointer file format round-trip

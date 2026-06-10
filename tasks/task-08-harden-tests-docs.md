@@ -9,7 +9,7 @@ Make Tailvault robust enough to trust with real data.
 ## Acceptance criteria
 
 - [ ] `tailvault verify` re-hashes stored blobs and reports corruption / missing.
-- [ ] Custom per-path **union** merge driver for `vault.lock` (Q3) so concurrent
+- [ ] Custom per-path **union** merge driver for `tailvault.lock` (Q3) so concurrent
       pushes don't clobber each other; installed by `init`.
 - [ ] Unit + integration test coverage across config/lock/rules/backend/engine/gc.
 - [ ] User docs: install, `init`, `track`, day-to-day push/pull, recovery.

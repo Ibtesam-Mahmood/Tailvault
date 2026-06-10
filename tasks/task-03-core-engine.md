@@ -8,11 +8,11 @@ The working sync core: `track`, `status`, `push`, `pull`.
 
 ## Acceptance criteria
 
-- [ ] `tailvault track <glob>` adds include rule(s) to `vault.toml`.
+- [ ] `tailvault track <glob>` adds include rule(s) to `tailvault.toml`.
 - [ ] `tailvault status` reports each managed file as
       local-only / pushed / drifted / orphaned.
 - [ ] `tailvault push` hashes, uploads diffs (dedup by sha256), updates
-      `vault.lock` (with pusher identity + timestamp); **fails loudly** if the
+      `tailvault.lock` (with pusher identity + timestamp); **fails loudly** if the
       node is down or an upload fails — a green push guarantees bytes landed.
 - [ ] `tailvault pull` fetches blobs the current tree/branch needs.
 - [ ] Integration test: round-trip a file laptop → node → fresh clone.

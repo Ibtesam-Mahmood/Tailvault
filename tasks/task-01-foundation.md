@@ -9,9 +9,12 @@ A compiling Go CLI skeleton with config/lock parsing and the rule engine.
 ## Acceptance criteria
 
 - [ ] `go.mod` initialised; Cobra root command with `init`, `status`,
-      `location add` stubs; `go build ./...` succeeds.
-- [ ] `internal/config` parses & validates `vault.toml` (round-trip safe).
-- [ ] `internal/lock` parses & writes `vault.lock` in canonical form.
+      `location add`, interactive `setup` stubs; `go build ./...` succeeds.
+- [ ] `internal/tailscale` parses `tailscale status --json`; `setup` offers a
+      node pick-list from the local session with a manual-entry fallback
+      (no Tailscale login / stored credentials).
+- [ ] `internal/config` parses & validates `tailvault.toml` (round-trip safe).
+- [ ] `internal/lock` parses & writes `tailvault.lock` in canonical form.
 - [ ] `internal/rules` implements `min_size` + include/exclude glob matching
       (doublestar `**`), with override precedence.
 - [ ] `VERSION` embedded at build time; `tailvault --version` prints it.

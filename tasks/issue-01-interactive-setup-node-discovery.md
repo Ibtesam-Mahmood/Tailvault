@@ -21,7 +21,7 @@ We want a friendlier "attach to a project" experience without breaking the
    from Tailscale's control server. Gated behind `tailvault login` / `--use-api`;
    token stored user-level (OS keychain), never in the repo. **Off by default.**
 
-Plus `tailvault config set <key> <val>` for non-interactive `vault.toml` edits
+Plus `tailvault config set <key> <val>` for non-interactive `tailvault.toml` edits
 (complements `init` / `track`).
 
 ## Why it's safe
@@ -30,12 +30,15 @@ Defaults need nothing from Tailscale auth; discovery only reads an
 already-authenticated local daemon; credential storage is strictly opt-in. The
 minimal-auth design holds.
 
-## Next step
+## Decision (2026-06-10)
 
-Fold tiers 1–2 into Phase 1–2 acceptance criteria; keep tier 3 as a separate
-opt-in task. Capture the schema impact (none for tiers 1–2) when Task 00 freezes
-`locations.toml`.
+**Confirmed by the maintainer:** v1 ships **tiers 1–2** — manual entry plus
+**local-session discovery** (`tailscale status --json`, no credentials). **Tier 3
+(API/OAuth login) is out of scope for v1** and tracked as an opt-in Future item.
+Folded into Phase 1 (`setup`/discovery, see `task-01`) and Phase 2 (reachability
++ structured errors, see `task-02`). Schema impact for tiers 1–2 is none beyond
+the existing `locations.toml`; capture it when Task 00 freezes the schema.
 
 ## Origin
 
-Feasibility check from a maintainer `/btw` question, 2026-06-10.
+Feasibility check from a maintainer `/btw` question, 2026-06-10; decided same day.

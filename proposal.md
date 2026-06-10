@@ -58,6 +58,11 @@ the git filter/hook glue, and the retention policy.
   standalone with no git.
 - Per-project config + lockfile **committed to the repo**; user-level registry of
   storage locations kept **out** of the repo.
+- Interactive setup that registers a storage node by reading the **local Tailscale
+  session** (`tailscale status --json`) for a pick-list, or by manual entry — with
+  **no Tailscale login or stored credentials**.
+- Legible, **structured errors with stable codes + exit codes**; every command
+  preflights node reachability and aborts cleanly when the tailnet/node is down.
 - Size + glob filtering; per-file/pattern `history` and `preserve` flags.
 - History **off by default** (single current ref), but diffs and deletes always
   tracked. Auto-delete **on by default**, with per-file opt-out.
@@ -69,6 +74,9 @@ the git filter/hook glue, and the retention policy.
   `DESIGN.md` §9; v1 is folder-only).
 - Mobile devices as storage **hosts** (dropped; optional mirror only).
 - Public exposure (Tailscale Funnel) — tailnet-only by design.
+- Tailscale-API / OAuth login for **remote** node enumeration (storing an API
+  token). v1 reads only the local session; API mode is opt-in and tracked as a
+  Future item.
 - Multi-writer concurrency beyond a deterministic lock merge (see Open Q2).
 - A GUI/app (possible phase two).
 
@@ -91,7 +99,7 @@ graph TB
     subgraph laptop["Laptop (working clone)"]
         WT["Working tree<br/>real large files"]
         PTR["Pointer files<br/>(in git)"]
-        CFG["vault.toml + vault.lock<br/>(in git)"]
+        CFG["tailvault.toml + tailvault.lock<br/>(in git)"]
         CLI["tailvault CLI + git hooks"]
         REG["~/.config/tailvault/<br/>locations.toml"]
     end
@@ -114,7 +122,7 @@ graph TB
 
 ### Detailed Design
 
-#### Repo-committed config — `vault.toml`
+#### Repo-committed config — `tailvault.toml`
 
 ```toml
 # tailvault project config — committed to the repo
@@ -138,7 +146,7 @@ history  = true
 preserve = true                            # never auto-delete
 ```
 
-#### Repo-committed state — `vault.lock`
+#### Repo-committed state — `tailvault.lock`
 
 The source of truth for "what is stored, where, and when." Committed so every
 clone agrees.
@@ -200,9 +208,14 @@ share     = "vault"
 #### CLI surface
 
 ```
-tailvault init                 # write vault.toml + .gitattributes, install hooks
-tailvault location add <name>  # register a tailnode target (writes locations.toml)
-tailvault track <glob>         # add include rule(s) to vault.toml
+tailvault setup                # interactive: register a node by picking from your
+                               #   live tailnet (read from the local session) or by
+                               #   manual entry, then write tailvault.toml + hooks
+tailvault init                 # non-interactive: write tailvault.toml + .gitattributes, install hooks
+tailvault location add <name>  # register a tailnode target (writes locations.toml);
+                               #   --node to set manually, omit to pick from the tailnet
+tailvault location ls          # list registered locations + live reachability
+tailvault track <glob>         # add include rule(s) to tailvault.toml
 tailvault status               # local-only / pushed / drifted / orphaned
 tailvault push [--branch b]    # upload diffs, GC deletes, update lock; fail if node down
 tailvault pull                 # fetch blobs the current tree/branch needs
@@ -255,13 +268,13 @@ sequenceDiagram
     end
     TV->>TV: deleted files -> drop entry; mark sha for GC unless preserve
     TV->>N: GC marked shas not referenced by any branch lock
-    TV->>TV: write vault.lock; `tailscale whois` -> pusher stamp
+    TV->>TV: write tailvault.lock; `tailscale whois` -> pusher stamp
     TV-->>G: exit 0 -> git proceeds to push refs (incl. updated lock)
 ```
 
 #### GC / per-branch retention (proposed resolution of Open Q1)
 
-Mark-and-sweep keyed on **every local branch's committed `vault.lock`**: the
+Mark-and-sweep keyed on **every local branch's committed `tailvault.lock`**: the
 keep-set is the union of `sha256` (and `versions[]` for history-on entries)
 across all branch tips. A blob in `objects/` that is in no branch's keep-set and
 carries no `preserve` is eligible for deletion. This makes "delete on branch A
@@ -282,6 +295,55 @@ backend, Taildrive for the folder backend, `tailscale status`/`ping` for
 liveness + hard-fail, ACLs for authz, `tailscale whois` for the pusher stamp.
 Funnel is never used.
 
+#### Node discovery & location registration (reads the local session)
+
+Registering a storage location should not require typing IPs by hand or handing
+tailvault any Tailscale credentials. tailvault reads the **local, already
+authenticated Tailscale session** via `tailscale status --json` and offers the
+tailnet's nodes as a pick-list:
+
+- `tailvault setup` / `tailvault location add` (interactive): enumerate online
+  peers from `tailscale status --json`, let you pick one, prefill its MagicDNS
+  name, then prompt for `base_path` and `backend`, and write the entry to
+  `~/.config/tailvault/locations.toml`. Manual entry is always available as a
+  fallback (`--node <magicdns-or-ip>`), so the flow works even when the daemon
+  can't enumerate peers.
+- **No Tailscale login or API token is involved.** tailvault never authenticates
+  to the Tailscale control plane and never stores Tailscale credentials — it only
+  reads the local daemon's existing view of the tailnet. (An optional, opt-in
+  Tailscale-API mode for remote enumeration is explicitly **out of scope for v1**
+  and tracked under Future.)
+- Precondition: Tailscale must be installed and the machine logged into the
+  tailnet. If `tailscale` is absent or the local node is logged out, discovery is
+  skipped and tailvault falls back to manual entry with a clear message.
+
+#### Error model — fail clearly when the node isn't reachable
+
+Hard-fail is a core guarantee (`DESIGN.md` §2), and the failure must be
+*legible*. **Every command that needs the storage node runs a preflight** (
+`tailscale status` for tailnet health, then `tailscale ping` / a backend `Stat`
+to the specific node) and **aborts before doing any partial work** if the node
+isn't reachable. Errors are structured, not raw stack traces or SSH noise:
+
+- A small set of typed conditions, each with a stable code, a one-line cause, and
+  a concrete next step. Examples:
+  - `TV-NET-01 — Tailscale not running.` *Cause:* `tailscaled` not reachable /
+    `tailscale` not in PATH. *Fix:* start Tailscale and run `tailscale status`.
+  - `TV-NET-02 — Not logged into the tailnet.` *Fix:* `tailscale up`.
+  - `TV-NODE-01 — Storage node 'home-pi' is offline/unreachable.` *Cause:* peer
+    not in `tailscale status`, or `ping`/`Stat` failed. *Fix:* check the node is
+    powered on and connected; `tailvault location ls` shows live reachability.
+  - `TV-NODE-02 — Node reachable but base_path not writable.` *Fix:* check the
+    SSH user / Taildrive share and `base_path` permissions.
+  - `TV-OBJ-01 — Expected blob <sha> missing on the node.` (integrity/`pull`).
+- **Exit codes** are bucketed so scripts and the git hooks can branch on them:
+  `0` success; `2` config/precondition (bad `tailvault.toml`, no location); `3`
+  network/Tailscale down; `4` node unreachable; `5` integrity/missing blob. The
+  `pre-push` hook surfaces the same code so a failed push reads obviously rather
+  than as a generic git error.
+- Preflight-first ordering guarantees a node-down failure leaves **no** partial
+  upload and an **unadvanced** lock — the repo state never gets ahead of storage.
+
 ---
 
 ## Implementation Plan
@@ -294,16 +356,20 @@ MVP-vs-full split.
 
 #### Phase 0 — Decisions & spec freeze [0.5 d]
 - [ ] Resolve the Open Questions below (language, backend order, lock-merge, GC).
-- [ ] Lock the `vault.toml` / `vault.lock` / pointer schemas.
+- [ ] Lock the `tailvault.toml` / `tailvault.lock` / pointer schemas.
 
 #### Phase 1 — Foundation [2 d]
-- [ ] Go module + Cobra CLI skeleton; `init`, `location add`.
+- [ ] Go module + Cobra CLI skeleton; `init`, `location add`, interactive `setup`.
+- [ ] Node discovery from the **local session** (`tailscale status --json` parse)
+      → pick-list; manual-entry fallback; write `locations.toml`.
 - [ ] Config/lock parse + write (TOML); path-id + sha256 hashing.
 - [ ] Rule engine: size threshold + include/exclude globs.
 
 #### Phase 2 — Backend layer + SSH [2 d]
 - [ ] `Backend` interface; SSH implementation (Stat/Get/Put/Delete/List).
 - [ ] `tailscale status/ping` preflight; hard-fail on unreachable.
+- [ ] **Structured error model**: typed conditions + stable codes (`TV-NET-*`,
+      `TV-NODE-*`, `TV-OBJ-*`) + bucketed exit codes; `location ls` reachability.
 
 #### Phase 3 — Core engine [3 d]
 - [ ] `track`, `status`; diff detection vs lock.
@@ -362,7 +428,7 @@ gantt
 
 | Risk | Impact | Prob. | Mitigation |
 |---|---|---|---|
-| `vault.lock` merge conflicts between clients | M | M | Custom git merge driver (per-path union); single-writer in practice early on (Open Q2) |
+| `tailvault.lock` merge conflicts between clients | M | M | Custom git merge driver (per-path union); single-writer in practice early on (Open Q2) |
 | GC deletes a blob another branch/remote needs | H | L | Mark-and-sweep across **all** branch locks + `--dry-run`; never delete `preserve` |
 | Taildrive/WebDAV flakiness at ~1 GB | M | M | Ship SSH backend first; Taildrive opt-in (Open Q3) |
 | Partial push leaves lock ahead of storage | H | L | Upload blobs **before** writing/committing lock; verify Stat post-Put |
@@ -398,7 +464,7 @@ gantt
 
 - **Build:** `go build` → single static binary; release per-OS (darwin/linux,
   amd64/arm64) via GoReleaser. Optional Homebrew tap.
-- **Install on a repo:** `tailvault init` writes `vault.toml`, `.gitattributes`,
+- **Install on a repo:** `tailvault init` writes `tailvault.toml`, `.gitattributes`,
   and installs hooks; `tailvault location add` registers the node.
 - **Phased adoption:** start read-mostly on `root-pnp` behind a branch; verify
   lean clone + reliable push/pull before flipping other projects.
@@ -430,7 +496,7 @@ gantt
 - [ ] **Q2 — First backend.** SSH (most reliable at ~1 GB) vs Taildrive (the
   "node runs only Tailscale" aesthetic). **Recommend: SSH first, Taildrive in
   Phase 7.**
-- [ ] **Q3 — `vault.lock` conflict policy.** Custom per-path **union** merge
+- [ ] **Q3 — `tailvault.lock` conflict policy.** Custom per-path **union** merge
   driver, vs last-writer-wins, vs declaring single-writer for now. **Recommend:
   ship a per-path union merge driver; assume single active writer early.**
 - [ ] **Q4 — GC trigger.** Auto-GC inside every `push` vs an explicit
@@ -457,6 +523,10 @@ gantt
   identity auth, GC coordination, app frontend. Operational cost = an always-on
   daemon. Full analysis in `DESIGN.md` §9.
 - **Lazy/partial checkout**, a GUI/app, and S3-compatible backends.
+- **Opt-in Tailscale-API discovery** — enumerate tailnet nodes via the Tailscale
+  API (OAuth/API key, token stored in the OS keychain) for machines where the
+  local daemon can't, or for remote registration. Off by default; v1 uses the
+  local session only.
 
 ---
 
@@ -472,7 +542,7 @@ gantt
 
 ### File Inventory (to be created during build)
 - **Created:** `cmd/tailvault/*`, `internal/{config,lock,store,backend,gitglue,gc}/*`,
-  `vault.toml`/`vault.lock`/`.gitattributes` per repo, `~/.config/tailvault/locations.toml`.
+  `tailvault.toml`/`tailvault.lock`/`.gitattributes` per repo, `~/.config/tailvault/locations.toml`.
 - **Modified:** none (greenfield).
 - **Deleted:** none.
 
