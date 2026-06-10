@@ -6,6 +6,14 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.32 — 2026-06-10
+
+Phase 3 — pull corrupt-vs-missing message (task-15 fix, R-B).
+
+- A corrupt/mismatched blob on pull now returns a TV-OBJ-01 error whose cause names
+  corruption and whose fix points at `tailvault verify`/re-store, distinct from the
+  "missing object" message (still exit 5, still no overwrite).
+
 ## v0.0.31 — 2026-06-10
 
 Phase 3 — push records real content size (task-14 fix, R-B).
