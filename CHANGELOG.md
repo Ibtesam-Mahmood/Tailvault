@@ -6,6 +6,17 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.5 — 2026-06-10
+
+Phase 1 — structured error model (task-07, `internal/tserr`).
+
+- Added `tserr.Error` with stable codes (`TV-NET-01/02`, `TV-NODE-01/02`, `TV-OBJ-01`),
+  cause/fix rendering, `Unwrap()`, and `ExitCode()` mapped to buckets (NET→3, NODE→4,
+  OBJ→5, default→2). Constructors per condition plus `ExitCodeFor(err)` (nil→0,
+  untyped→1, typed→bucket).
+- Wired into the CLI: `cli.Execute()` now returns `error`; `main` prints to stderr and
+  exits with `tserr.ExitCodeFor(err)`. Commands return typed errors from `RunE`.
+
 ## v0.0.4 — 2026-06-10
 
 Phase 0 — Go module + Cobra CLI skeleton (task-02).
