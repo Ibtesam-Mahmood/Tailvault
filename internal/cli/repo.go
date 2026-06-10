@@ -3,8 +3,10 @@ package cli
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
+	"strings"
 
 	"github.com/Ibtesam-Mahmood/tailvault/internal/backend"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/config"
@@ -69,4 +71,48 @@ func resolveBackend(_ context.Context, cfg *config.Config) (backend.Backend, loc
 	default:
 		return nil, locations.Location{}, cliCfgErr("location "+cfg.Storage.Location+" has unknown backend", nil)
 	}
+}
+
+// preflightNode is the command-level preflight that runs BEFORE any transfer:
+// it confirms the local tailnet session is healthy (TV-NET-01/02) and, for an
+// ssh location, that the node answers a ping (TV-NODE-01). Taildrive relies on
+// the backend's own os-level errors for an unmounted/unwritable share.
+func preflightNode(ctx context.Context, loc locations.Location) error {
+	ts := tailscale.New()
+	if _, err := ts.Status(ctx); err != nil {
+		return err // already a typed TV-NET-01/02
+	}
+	if loc.Backend == locations.BackendSSH {
+		if err := ts.Ping(ctx, loc.Node); err != nil {
+			return tserr.NodeOfflineErr(loc.Node, err)
+		}
+	}
+	return nil
+}
+
+// whoisSelf resolves the local tailnet identity ("user@host") for the pusher
+// stamp; any failure returns an error so the caller falls back to git identity.
+func whoisSelf(ctx context.Context) (string, error) {
+	ts := tailscale.New()
+	st, err := ts.Status(ctx)
+	if err != nil {
+		return "", err
+	}
+	addr := st.Self.DNSName
+	if len(st.Self.IPs) > 0 {
+		addr = st.Self.IPs[0]
+	}
+	if addr == "" {
+		return "", cliCfgErr("no self address from tailscale status", nil)
+	}
+	return ts.Whois(ctx, addr)
+}
+
+// gitEmail returns `git config user.email`, or "" when unavailable.
+func gitEmail() string {
+	out, err := exec.Command("git", "config", "user.email").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
