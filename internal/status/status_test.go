@@ -123,3 +123,33 @@ func TestManagedFiles_RuleEngine(t *testing.T) {
 		t.Errorf("keep.pdf should be managed (include glob); got %v", managed)
 	}
 }
+
+// TestManagedFiles_MinSizeOnlyPointer covers qa-review C2: a file managed ONLY
+// by min_size that is currently a clean pointer must still be classified as
+// managed — its on-disk pointer text (~60B) is below min_size, but the recorded
+// content size is above it. ManagedFiles must use the pointer-aware size.
+func TestManagedFiles_MinSizeOnlyPointer(t *testing.T) {
+	root := t.TempDir()
+	// A clean pointer recording a large content size; no include glob matches it.
+	ptr := "tailvault.v1\nsha256 deadbeef\nsize 5000000\nlocation home-pi\n"
+	if err := os.WriteFile(filepath.Join(root, "big.bin"), []byte(ptr), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{
+		Version: 1,
+		Rules:   config.Rules{MinSize: "1000B"}, // no include; managed purely by size
+	}
+	managed, err := ManagedFiles(cfg, root)
+	if err != nil {
+		t.Fatalf("ManagedFiles: %v", err)
+	}
+	found := false
+	for _, m := range managed {
+		if m == "big.bin" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("min_size-only clean-pointer file should be managed (content size 5MB >= 1KB), got %v", managed)
+	}
+}

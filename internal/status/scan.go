@@ -35,11 +35,15 @@ func ManagedFiles(cfg *config.Config, root string) ([]string, error) {
 		if rel == "tailvault.toml" || rel == "tailvault.lock" {
 			return nil
 		}
-		info, ierr := d.Info()
-		if ierr != nil {
-			return ierr
+		// Use the real content size (pointer-aware), so a file managed only by
+		// min_size is classified consistently whether it's materialized or still
+		// a clean pointer — otherwise the ~60-byte pointer text would drop it
+		// from the managed set during the pre-pull window.
+		size, szerr := ContentSize(root, rel)
+		if szerr != nil {
+			return szerr
 		}
-		dec, derr := rules.Evaluate(cfg, rel, info.Size())
+		dec, derr := rules.Evaluate(cfg, rel, size)
 		if derr != nil {
 			return derr
 		}
