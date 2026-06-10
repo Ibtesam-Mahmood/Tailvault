@@ -6,6 +6,18 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.4 — 2026-06-10
+
+Phase 0 — Go module + Cobra CLI skeleton (task-02).
+
+- Scaffolded the Go module `github.com/Ibtesam-Mahmood/tailvault` (go 1.26) with
+  Cobra v1.8.0: `cmd/tailvault/main.go` entry point, `internal/cli/root.go`
+  (`Execute() int`), and one stub command per CLI verb (`setup`, `init`,
+  `location add|ls`, `track`, `status`, `push`, `pull`, `gc`, `verify`, `revert`).
+- `--version` embeds the `VERSION` file at build time via ldflags
+  (`internal/version`); added a `Makefile` (build/test/vet/fmt) and a table-driven
+  `root_test.go`.
+
 ## v0.0.3 — 2026-06-10
 
 Phase 0 — spec freeze (task-01).
