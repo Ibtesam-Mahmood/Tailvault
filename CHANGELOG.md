@@ -6,6 +6,15 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.13 — 2026-06-10
+
+Phase 1 — config defaults + frozen Go API names (task-01/03 refinement, pulled into M1).
+
+- Added `config.Default() Config`, the canonical zero-config baseline.
+- Froze the public Go API names in SPEC §8 (`lock.Lock`/`lock.Entry`, the error-layering
+  rule) so WS-B/WS-C build against stable identifiers — resolves the earlier
+  `lock.File`-vs-`lock.Lock` naming inconsistency.
+
 ## v0.0.12 — 2026-06-10
 
 Phase 1 — config error code (task-12 prereq, pulled into M1).
