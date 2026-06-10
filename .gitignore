@@ -1,0 +1,43 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/
+*.swp
+
+# Go
+/tailvault
+/bin/
+*.exe
+*.test
+*.out
+coverage.txt
+vendor/
+
+# Python (tooling scripts, if any)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Node (docs/site tooling, if any)
+node_modules/
+npm-debug.log*
+
+# Env / secrets
+.env
+.env.local
+*.local
+
+# Local tailvault state (never commit real registry / blobs)
+locations.toml
+*.blob
+
+# Build / logs / temp
+dist/
+build/
+*.log
+tmp/
