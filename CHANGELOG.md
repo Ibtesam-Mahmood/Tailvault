@@ -6,6 +6,12 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.39 — 2026-06-10
+
+Phase 3 — docs fix (R-C.25-1): correct `docs/usage.md` min_size unit semantics to
+binary (SPEC §7), matching the code — `5MB` = 5,242,880 bytes, `MiB` an accepted
+synonym. Docs-only; no code change.
+
 ## v0.0.38 — 2026-06-10
 
 Phase 3 — cross-cutting tests, docs, and CI (task-25). Adds a `//go:build integration`

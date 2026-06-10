@@ -95,7 +95,8 @@ tailvault track '**/*.stl'
 
 ```toml
 [rules]
-min_size    = "5MB"            # decimal: 5MB = 5_000_000 bytes; use MiB for 1024²
+min_size    = "5MB"            # binary units: 5MB = 5*1024*1024 = 5_242_880 bytes
+                               # (MiB is an accepted synonym for the same value)
 include     = ["**/*.pdf", "**/*.stl"]
 exclude     = ["**/*.tmp", "drafts/**"]
 history     = false            # default: no version history (anti-bloat)
