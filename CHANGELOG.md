@@ -6,6 +6,16 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.22 — 2026-06-10
+
+Phase 2 — config-error wrapping + objMissing fix (WS-B follow-up).
+
+- Config/lock load+parse failures now wrap to `tserr.ConfigErr` (TV-CFG-01, exit 2) at
+  the command boundary (`loadConfig`/`loadLockOrEmpty`); leaf packages stay plain-error.
+  Pinned by `TestStatus_BadConfig_IsTVCFGExit2`. Removed the interim local TV-CFG helpers
+  in favour of the canonical `tserr.ConfigErr` (team-lead mandate).
+- Fixed the `ObjMissing` error to strip the `objects/` key prefix (qa-review nit).
+
 ## v0.0.21 — 2026-06-10
 
 Phase 2 — pull (task-15, `internal/pull`).
