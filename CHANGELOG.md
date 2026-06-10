@@ -6,6 +6,17 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.11 — 2026-06-10
+
+Phase 1 — storage backend (task-09, `internal/backend`).
+
+- Added the `Backend` interface (`Stat`/`Get`/`Put`/`Delete`/`List`) with the SSH
+  implementation (preflight ping → TV-NODE-01; perm/space → TV-NODE-02; missing object
+  → TV-OBJ-01) and `FSBackend`, the in-tree stub all workstreams' tests use. Includes
+  `HashObject`, an `ErrNotExist` sentinel, and an exported `RunContract` test helper.
+  `Stat` of an absent key returns `Meta{Exists:false}, nil` (existence-as-data, for
+  content-addressed dedup); only `Get` of a missing key errors. See DEVIATIONS.
+
 ## v0.0.10 — 2026-06-10
 
 Phase 1 — Tailscale wrapper (task-08, `internal/tailscale`).
