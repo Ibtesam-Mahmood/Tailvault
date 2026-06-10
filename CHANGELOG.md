@@ -6,6 +6,15 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.25 — 2026-06-10
+
+Phase 3 — `init` command (task-18, `internal/cli/init.go`).
+
+- Implemented `tailvault init`: writes a `config.Default()` `tailvault.toml`,
+  `.gitattributes` filter wiring, git config (filter + the `__merge-lock` merge driver),
+  and installs hooks — idempotent, preserving any existing config. Not-a-git-repo
+  → `tserr.ConfigErr` (exit 2).
+
 ## v0.0.24 — 2026-06-10
 
 Phase 3 — clean/smudge filter (task-17, `internal/filter`).
