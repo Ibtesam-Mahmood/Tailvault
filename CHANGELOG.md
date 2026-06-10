@@ -6,6 +6,15 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.28 — 2026-06-10
+
+Phase 3 — `revert` command (task-21, `internal/revert`).
+
+- Added `tailvault revert <path> <sha>`: repoints a history-on file to a recorded prior
+  version and stages the lock. History-off / unknown-sha / unknown-path → typed errors;
+  already-current is a no-op; a missing blob → TV-OBJ-01 (exit 5); `versions[]` left
+  unchanged.
+
 ## v0.0.27 — 2026-06-10
 
 Phase 3 — history (task-20, `internal/history` + push hook).
