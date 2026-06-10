@@ -6,6 +6,18 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.3 — 2026-06-10
+
+Phase 0 — spec freeze (task-01).
+
+- Added **`SPEC.md`**, the normative frozen contract for Blocks 1–2: `tailvault.toml`
+  fields/defaults/validation and rule-eval order (§1); `tailvault.lock` entry fields
+  and canonical ordering (§2); the 4-line pointer format (§3); `locations.toml`
+  schema and storage layout (§4); the error catalogue (`TV-NET/NODE/OBJ/CFG`) mapped
+  to exit buckets 0/2/3/4/5 (§5); resolved open questions Q1–Q10 (§6); and the
+  size-unit binding (decimal MB, binary MiB) (§7).
+- `CLAUDE.md` planned-structure section now references `SPEC.md`.
+
 ## v0.0.2 — 2026-06-10
 
 Spec refinement (no code yet).
