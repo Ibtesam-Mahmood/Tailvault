@@ -50,12 +50,11 @@ func TestHelpListsAllCommands(t *testing.T) {
 }
 
 func TestStubsRunCleanly(t *testing.T) {
-	// Commands still backed by the notImplemented stub. As each command is
-	// implemented it is removed from this list (track -> task-12,
-	// location -> task-10, setup -> task-11, status -> task-13,
-	// push/pull -> task-14/15 done). init/gc/verify/revert land in WS-C.
+	// Commands still backed by the notImplemented stub. init (WS-C task-18) is
+	// implemented and covered by init_test.go; gc/verify/revert (WS-C) get
+	// removed from this list as they are wired below.
 	cmds := [][]string{
-		{"init"}, {"gc"}, {"verify"},
+		{"gc"}, {"verify"},
 		{"revert", "a/b.pdf", "deadbeef"},
 	}
 	for _, args := range cmds {

@@ -21,6 +21,7 @@ func newRootCmd() *cobra.Command {
 		newSetupCmd(), newInitCmd(), newLocationCmd(),
 		newTrackCmd(), newStatusCmd(), newPushCmd(), newPullCmd(),
 		newGCCmd(), newVerifyCmd(), newRevertCmd(),
+		newMergeLockCmd(),
 	)
 	return root
 }
