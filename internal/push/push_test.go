@@ -9,11 +9,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/Ibtesam-Mahmood/tailvault/internal/backend"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/config"
+	"github.com/Ibtesam-Mahmood/tailvault/internal/history"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/lock"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/tserr"
 )
@@ -242,6 +244,61 @@ func TestPush_PutVerifyFailure_NotRecorded(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "tailvault.lock")); !os.IsNotExist(err) {
 		t.Errorf("lock must not be written when a blob fails post-Put verify")
+	}
+}
+
+func TestPush_HistoryOn_AccumulatesVersions(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	cfg := &config.Config{
+		Version: 1,
+		Storage: config.Storage{Location: "home-pi"},
+		Rules:   config.Rules{MinSize: "5MB", Include: []string{"**/*.pdf"}, History: true, AutoDelete: true},
+	}
+	b := backend.NewFSBackend(t.TempDir())
+	hpath := filepath.Join(root, "h.pdf")
+
+	contents := []string{"v1-content", "v2-content", "v3-content"}
+	lk := &lock.Lock{Version: 1}
+	for _, c := range contents {
+		if err := os.WriteFile(hpath, []byte(c), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		res, err := Run(ctx, root, cfg, lk, deps(b), Options{})
+		if err != nil {
+			t.Fatalf("push %q: %v", c, err)
+		}
+		// history-on never marks a superseded sha for GC.
+		if len(res.MarkedGC) != 0 {
+			t.Errorf("history-on push marked GC: %v", res.MarkedGC)
+		}
+		lk, err = lock.Load(filepath.Join(root, "tailvault.lock"))
+		if err != nil {
+			t.Fatalf("reload lock: %v", err)
+		}
+	}
+
+	want := []string{sha([]byte("v3-content")), sha([]byte("v2-content")), sha([]byte("v1-content"))}
+
+	// versions[] in the lock is newest-first with all three shas.
+	e, ok := lk.Find("h.pdf")
+	if !ok {
+		t.Fatal("h.pdf missing from lock")
+	}
+	if !reflect.DeepEqual(e.Versions, want) {
+		t.Errorf("lock versions = %v, want %v", e.Versions, want)
+	}
+	if e.SHA256 != want[0] {
+		t.Errorf("current sha = %s, want newest %s", e.SHA256, want[0])
+	}
+
+	// refs/<path-id> on the node lists all three, newest-first.
+	got, err := history.ReadVersions(ctx, b, history.PathID("h.pdf"))
+	if err != nil {
+		t.Fatalf("ReadVersions: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("refs versions = %v, want %v", got, want)
 	}
 }
 

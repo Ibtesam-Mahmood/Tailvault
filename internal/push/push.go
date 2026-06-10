@@ -15,6 +15,7 @@ import (
 
 	"github.com/Ibtesam-Mahmood/tailvault/internal/backend"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/config"
+	"github.com/Ibtesam-Mahmood/tailvault/internal/history"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/lock"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/pointer"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/rules"
@@ -119,14 +120,24 @@ func Run(ctx context.Context, root string, cfg *config.Config, lk *lock.Lock, d 
 			res.Uploaded = append(res.Uploaded, sha)
 		}
 
-		// Content change at an existing path → mark superseded sha for GC
-		// (history-off, not preserved). History-on append is WS-C task-20's hook.
+		// Content change at an existing path: history-off marks the superseded sha
+		// for GC; history-on keeps it (the append below preserves it in versions[]).
 		if old, ok := oldByPath[path]; ok && old.SHA256 != sha {
 			if !dec.History && !old.Preserve {
 				res.MarkedGC = append(res.MarkedGC, old.SHA256)
 			}
-			// TODO(task-20, WS-C): when dec.History, append old.SHA256 to the
-			// version chain and set e.Versions instead of marking for GC.
+		}
+
+		// History-on (task-20): append the new sha to refs/<path-id> + versions[]
+		// (newest-first, new sha at head) rather than GC-marking the old sha.
+		// Superseded versions live in versions[] and stay in GC's keep-set. Skip
+		// on dry-run so the node's refs are not mutated.
+		var versions []string
+		if dec.History && !opts.DryRun {
+			versions, err = history.AppendVersion(ctx, d.Backend, history.PathID(path), sha)
+			if err != nil {
+				return Result{}, err
+			}
 		}
 
 		newEntries[path] = lock.Entry{
@@ -138,6 +149,7 @@ func Run(ctx context.Context, root string, cfg *config.Config, lk *lock.Lock, d 
 			Pusher:   pusher,
 			History:  dec.History,
 			Preserve: dec.Preserve,
+			Versions: versions,
 		}
 	}
 
