@@ -70,11 +70,11 @@ func runInit(cmd *cobra.Command, location string) error {
 		cfg := config.Default()
 		cfg.Storage.Location = location // may be empty; user sets it via setup/location add
 		if err := config.Write(cfgPath, &cfg); err != nil {
-			return fmt.Errorf("init: write tailvault.toml: %w", err)
+			return tserr.ConfigErr("init: write tailvault.toml", err)
 		}
 		fmt.Fprintln(out, "wrote tailvault.toml")
 	} else {
-		return fmt.Errorf("init: stat tailvault.toml: %w", statErr)
+		return tserr.ConfigErr("init: stat tailvault.toml", statErr)
 	}
 
 	// 2. Register filter + merge attribute lines (idempotent, append-only).

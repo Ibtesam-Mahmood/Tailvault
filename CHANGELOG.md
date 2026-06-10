@@ -6,6 +6,14 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.34 — 2026-06-10
+
+Phase 3 — init/revert exit-code wrapping (task-18/21 fix, R-C).
+
+- `init` (toml write/stat failures) and `revert` (corrupt-lock) now return
+  `tserr.ConfigErr` / TV-CFG-01 (exit 2) instead of a generic exit 1. Tests added for
+  `init --location` and revert corrupt-lock.
+
 ## v0.0.33 — 2026-06-10
 
 Phase 3 — status ManagedFiles pointer-aware size (task-13 fix, R-B C2).

@@ -61,7 +61,9 @@ func Run(ctx context.Context, opt Options) error {
 	}
 	lk, err := lock.Load(lockPath)
 	if err != nil {
-		return fmt.Errorf("revert: load lock: %w", err)
+		// A missing/unparseable committed lock is a config/precondition failure
+		// (TV-CFG, exit 2) per SPEC §5/§8, not a generic error.
+		return tserr.ConfigErr("revert: load "+lockPath, err)
 	}
 
 	e, ok := lk.Find(opt.Path)

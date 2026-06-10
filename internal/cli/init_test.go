@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Ibtesam-Mahmood/tailvault/internal/config"
 )
 
 func gitInit(t *testing.T) string {
@@ -109,6 +111,20 @@ func TestInit_ExistingConfigPreserved(t *testing.T) {
 	got, _ := os.ReadFile(filepath.Join(dir, "tailvault.toml"))
 	if string(got) != custom {
 		t.Errorf("existing tailvault.toml was overwritten:\n%s", got)
+	}
+}
+
+func TestInit_LocationFlag(t *testing.T) {
+	dir := gitInit(t)
+	if _, err := runInitIn(t, dir, "--location", "home-pi"); err != nil {
+		t.Fatalf("init --location: %v", err)
+	}
+	cfg, err := config.Load(filepath.Join(dir, "tailvault.toml"))
+	if err != nil {
+		t.Fatalf("load written config: %v", err)
+	}
+	if cfg.Storage.Location != "home-pi" {
+		t.Errorf("storage.location = %q, want home-pi", cfg.Storage.Location)
 	}
 }
 

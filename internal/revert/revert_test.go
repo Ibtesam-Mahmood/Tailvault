@@ -133,6 +133,20 @@ func TestRun_AlreadyCurrentNoOp(t *testing.T) {
 	}
 }
 
+func TestRun_CorruptLock(t *testing.T) {
+	repo := t.TempDir()
+	// An unparseable committed lock is a config/precondition failure (exit 2).
+	if err := os.WriteFile(filepath.Join(repo, "tailvault.lock"), []byte("not = = valid toml"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	be := backend.NewFSBackend(t.TempDir())
+	err := Run(context.Background(), Options{RepoRoot: repo, Path: "x", SHA: "y", Backend: be})
+	var te *tserr.Error
+	if !errors.As(err, &te) || te.ExitCode() != 2 {
+		t.Errorf("corrupt lock: want ConfigErr (exit 2), got %v", err)
+	}
+}
+
 func TestRun_MissingBlob(t *testing.T) {
 	a := shaOf([]byte("A"))
 	b := shaOf([]byte("B"))
