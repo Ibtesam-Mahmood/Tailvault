@@ -25,12 +25,10 @@ func newRootCmd() *cobra.Command {
 	return root
 }
 
-// Execute runs the root command and returns a process exit code (0 on success).
-func Execute() int {
-	if err := newRootCmd().Execute(); err != nil {
-		return 1 // Task 07 replaces this with bucketed exit codes.
-	}
-	return 0
+// Execute runs the root command, returning any error for main to map into a
+// bucketed process exit code via tserr.ExitCodeFor.
+func Execute() error {
+	return newRootCmd().Execute()
 }
 
 // notImplemented is the shared stub body for commands not yet wired up.
