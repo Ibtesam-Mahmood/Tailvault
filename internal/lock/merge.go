@@ -8,6 +8,10 @@ package lock
 // Rules, keyed by entry path:
 //   - a path on only one side is kept as-is (disjoint edits union cleanly);
 //   - a path on both sides with the same sha256 is kept once, unioning versions[];
+//     the entry is Deleted only if BOTH sides are tombstones — **live beats
+//     tombstone**: if any branch still has the file live, the merged lock
+//     presents it live so pull materializes the file that genuinely exists on a
+//     branch (preferring the tombstone there would silently drop a live file);
 //   - a path on both sides with differing sha256 resolves deterministically:
 //     newest pushed_at wins, tie broken by the lexicographically greater sha256,
 //     and versions[] are unioned (winner-first) so no historical blob reference
@@ -29,6 +33,7 @@ func Merge(base, ours, theirs *Lock) (*Lock, error) {
 			byPath[e.Path] = e // disjoint -> union
 		case o.SHA256 == e.SHA256:
 			o.Versions = unionVersions(o.Versions, e.Versions) // identical sha -> keep, merge history
+			o.Deleted = o.Deleted && e.Deleted                 // live beats tombstone: deleted only if BOTH are
 			byPath[e.Path] = o
 		default:
 			byPath[e.Path] = resolve(o, e) // differing sha -> deterministic winner

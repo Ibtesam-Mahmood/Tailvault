@@ -6,6 +6,15 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.42 — 2026-06-10
+
+Phase 3 — lock merge: same-sha resolution is live-beats-tombstone. In `Merge`'s
+same-sha branch, a merged path is `Deleted` only if BOTH sides are tombstones
+(`o.Deleted = o.Deleted && e.Deleted`), so a file still live on any branch materializes
+on pull instead of staying deleted — removing a nondeterministic merge flicker introduced
+by the `Entry.Deleted` tombstone field. Differing-sha resolution unchanged. SPEC §2 merge
+note updated. Completes the tombstone merge semantics.
+
 ## v0.0.41 — 2026-06-10
 
 Phase 3 — fix(push,pull,status): tombstone deleted-but-preserved entries; never

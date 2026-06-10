@@ -91,7 +91,10 @@ Each entry is a `[[entry]]` table. **Canonical ordering rules:**
 - `deleted = true` marks a **tombstone**: the working file is gone but its blob
   must survive — emitted only when the path was preserved or `auto_delete` was
   opted out. `push` retains tombstone entries instead of dropping them so the
-  sha stays in the GC keep-set; omitted for live entries (default `false`).
+  sha stays in the GC keep-set; omitted for live entries (default `false`). In a
+  merge, **live beats tombstone** for the same path+sha: a path is `deleted` in
+  the merged lock only if *both* sides are tombstones, so a file still live on
+  any branch is materialized by `pull` rather than silently dropped.
 - `versions = ["<newest>", …, "<oldest>"]` — **newest-first** (load-bearing for
   `revert` (Task 21) and GC keep-set construction (Task 16); the direction is
   normative).

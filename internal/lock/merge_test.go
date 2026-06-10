@@ -43,6 +43,41 @@ func TestMerge_SamePathSameSha(t *testing.T) {
 	}
 }
 
+func TestMerge_SameShaLiveBeatsTombstone(t *testing.T) {
+	// Same path, same sha, one side live and one a tombstone. The merged entry
+	// must be live (Deleted=false) regardless of argument order, so pull
+	// materializes the file that still exists on a branch.
+	live := &Lock{Entries: []Entry{{Path: "a", SHA256: "X", Deleted: false}}}
+	tomb := &Lock{Entries: []Entry{{Path: "a", SHA256: "X", Deleted: true}}}
+	for _, tc := range []struct {
+		name         string
+		ours, theirs *Lock
+	}{
+		{"live-ours", live, tomb},
+		{"tomb-ours", tomb, live},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m, _ := Merge(nil, tc.ours, tc.theirs)
+			e, ok := m.Find("a")
+			if !ok || e.Deleted {
+				t.Errorf("live must beat tombstone: got Deleted=%v (ok=%v)", e.Deleted, ok)
+			}
+		})
+	}
+}
+
+func TestMerge_SameShaBothTombstonesStayDeleted(t *testing.T) {
+	// Both sides tombstones -> the merged entry remains a tombstone (blob kept
+	// alive, file stays deleted).
+	a := &Lock{Entries: []Entry{{Path: "a", SHA256: "X", Deleted: true}}}
+	b := &Lock{Entries: []Entry{{Path: "a", SHA256: "X", Deleted: true}}}
+	m, _ := Merge(nil, a, b)
+	e, ok := m.Find("a")
+	if !ok || !e.Deleted {
+		t.Errorf("both-deleted must stay a tombstone: got Deleted=%v (ok=%v)", e.Deleted, ok)
+	}
+}
+
 func TestMerge_DiffShaNewestPushedAtWins(t *testing.T) {
 	ours := &Lock{Entries: []Entry{{Path: "a", SHA256: "X", PushedAt: ts("2026-06-10T10:00:00Z")}}}
 	theirs := &Lock{Entries: []Entry{{Path: "a", SHA256: "Y", PushedAt: ts("2026-06-10T12:00:00Z")}}}
