@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 
 	"github.com/Ibtesam-Mahmood/tailvault/internal/version"
@@ -30,10 +28,4 @@ func newRootCmd() *cobra.Command {
 // bucketed process exit code via tserr.ExitCodeFor.
 func Execute() error {
 	return newRootCmd().Execute()
-}
-
-// notImplemented is the shared stub body for commands not yet wired up.
-func notImplemented(cmd *cobra.Command, _ []string) error {
-	fmt.Fprintln(cmd.OutOrStdout(), "not implemented yet")
-	return nil
 }

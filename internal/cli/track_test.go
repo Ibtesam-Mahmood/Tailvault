@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Ibtesam-Mahmood/tailvault/internal/config"
+	"github.com/Ibtesam-Mahmood/tailvault/internal/pointer"
 )
 
 // trackRepo builds a temp repo with a minimal tailvault.toml (min_size 1KB to
@@ -140,5 +141,27 @@ func TestTrackMissingConfigIsConfigError(t *testing.T) {
 	_, err := runTrackT(t, dir, "**/*.pdf")
 	if err == nil {
 		t.Fatal("missing config should error")
+	}
+}
+
+// TestTrackReportsPointerizedMinSizeFile is the regression test for the R-A LOW
+// finding: a file managed only by min_size that is currently a clean pointer
+// (~60B on disk) must still be reported. Reusing status.ManagedFiles makes the
+// match pointer-aware (ContentSize reads the pointer's real size) where the old
+// local walk used the on-disk size and wrongly dropped it.
+func TestTrackReportsPointerizedMinSizeFile(t *testing.T) {
+	dir := trackRepo(t)
+	// blob.bin matches NO include glob; it's managed solely by min_size (1KB).
+	// On disk it's a clean pointer whose recorded content size is 4096 (>1KB).
+	ptr := pointer.Encode(pointer.Pointer{SHA256: "deadbeef", Size: 4096, Location: "home-pi"})
+	if err := os.WriteFile(filepath.Join(dir, "blob.bin"), ptr, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runTrackT(t, dir, "**/*.pdf") // tracked glob is unrelated to .bin
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "blob.bin") {
+		t.Errorf("pointerized min_size-only file should be reported as managed:\n%s", out)
 	}
 }

@@ -2,14 +2,13 @@ package cli
 
 import (
 	"fmt"
-	"io/fs"
 	"path/filepath"
 	"sort"
 
 	"github.com/spf13/cobra"
 
 	"github.com/Ibtesam-Mahmood/tailvault/internal/config"
-	"github.com/Ibtesam-Mahmood/tailvault/internal/rules"
+	"github.com/Ibtesam-Mahmood/tailvault/internal/status"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/tserr"
 )
 
@@ -62,55 +61,17 @@ func runTrack(cmd *cobra.Command, root string, globs []string) error {
 		}
 	}
 
-	matches, err := walkManaged(root, cfg)
+	// Reuse status.ManagedFiles (pointer-aware via status.ContentSize) so a file
+	// managed only by min_size that is currently a clean pointer is still
+	// reported — matching exactly what `status`/`push` consider managed.
+	matches, err := status.ManagedFiles(cfg, root)
 	if err != nil {
 		return tserr.ConfigErr("scan working tree", err)
 	}
+	sort.Strings(matches)
 	fmt.Fprintln(out, "matches:")
 	for _, p := range matches {
 		fmt.Fprintf(out, "  %s\n", p)
 	}
 	return nil
-}
-
-// walkManaged enumerates files under root and returns the sorted, slash-
-// normalized, repo-relative paths that the merged rules consider vault-managed.
-// The .git directory is skipped. Matching is the full intersection of
-// min_size + include − exclude (+ overrides), per the rule engine — a tracked
-// but sub-threshold or excluded file legitimately will not appear.
-func walkManaged(root string, cfg *config.Config) ([]string, error) {
-	var managed []string
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			if d.Name() == ".git" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		rel = filepath.ToSlash(rel)
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
-		dec, err := rules.Evaluate(cfg, rel, info.Size())
-		if err != nil {
-			return err
-		}
-		if dec.Managed {
-			managed = append(managed, rel)
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	sort.Strings(managed)
-	return managed, nil
 }

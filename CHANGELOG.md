@@ -6,6 +6,15 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.35 — 2026-06-10
+
+Phase 3 — track pointer-aware report + dead-code removal (task-12 fix, R-A).
+
+- `track` now reports managed files via the pointer-aware `status.ManagedFiles` (replacing
+  a local on-disk-size walk), so a min_size-only clean-pointer file is no longer dropped
+  from the report. Removed the now-dead `notImplemented` helper (and its `fmt` import) from
+  `internal/cli/root.go` — every command is wired.
+
 ## v0.0.34 — 2026-06-10
 
 Phase 3 — init/revert exit-code wrapping (task-18/21 fix, R-C).
