@@ -6,6 +6,15 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.7 — 2026-06-10
+
+Phase 1 — `tailvault.lock` state (task-04, `internal/lock`).
+
+- Added `lock.Lock`/`Entry` with `Load`, `Canonicalize` (bytewise path sort, fixed
+  field order, `versions` newest-first, RFC3339 UTC `pushed_at`), `Write`, `Upsert`,
+  and `Remove`. Tests cover byte-stability, UTC normalization, versions ordering, and
+  upsert/remove.
+
 ## v0.0.6 — 2026-06-10
 
 Phase 1 — `tailvault.toml` config (task-03, `internal/config`).
