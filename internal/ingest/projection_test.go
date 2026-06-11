@@ -5,8 +5,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"path/filepath"
 	"testing"
 
+	"github.com/Ibtesam-Mahmood/tailvault/internal/backend"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/catalog"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/identity"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/wal"
@@ -227,5 +229,197 @@ func TestProjectCatalogPreservesFederationHeader(t *testing.T) {
 	}
 	if rebuilt.VaultName != "demo" || rebuilt.Federation.FedID != "fed-xyz" || len(rebuilt.Federation.Members) != 1 {
 		t.Fatalf("federation header not preserved: %+v", rebuilt)
+	}
+}
+
+// TestProjectCatalogProjectsGC (fix-35-A): a WAL that has run gc must PROJECT the
+// OpGC record — removing the doomed entries by id∈BlobRefs — not error on it.
+func TestProjectCatalogProjectsGC(t *testing.T) {
+	ctx := context.Background()
+	log, _, _ := replayEnv(t)
+	keepE, _ := ingestEntry(t, "keep.bin", "keep")
+	doomE, doomID := ingestEntry(t, "doomed.bin", "doom")
+	for _, e := range []wal.Entry{keepE, doomE} {
+		rec, err := log.AppendIntent(ctx, e)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := log.MarkDone(ctx, rec.Entry.OpID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	gcRec, err := log.AppendIntent(ctx, wal.Entry{OpID: wal.NewOpID(), OpType: wal.OpGC, BlobRefs: []string{doomID}, Actor: "gc", CreatedAt: replayClock()()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := log.MarkDone(ctx, gcRec.Entry.OpID); err != nil {
+		t.Fatal(err)
+	}
+	recs, _ := log.Read(ctx)
+	rebuilt, err := ProjectCatalog(&catalog.Catalog{Version: catalog.SchemaVersion, Node: testNode}, recs, testNode)
+	if err != nil {
+		t.Fatalf("ProjectCatalog must not error on a WAL with gc: %v", err)
+	}
+	if _, ok := rebuilt.Find("keep.bin"); !ok {
+		t.Error("kept file missing")
+	}
+	if _, ok := rebuilt.Find("doomed.bin"); ok {
+		t.Error("gc-deleted file resurrected by rebuild")
+	}
+}
+
+// TestProjectCatalogRestoreRealWriter (fix-35-A/B) drives the REAL writer
+// (ingest.RestoreIdentity) so a writer/projector key drift would fail it: after a
+// restore, ProjectCatalog rebuilds the entry with the restored id AND a genesis
+// that self-certifies it.
+func TestProjectCatalogRestoreRealWriter(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	be := backend.NewFSBackend(root)
+	log := &wal.Log{B: be}
+	cat := &catalog.Catalog{Version: catalog.SchemaVersion, Node: testNode}
+
+	// Seed an entry via a real ingest WAL op so projection has it pre-restore.
+	ingE, _ := ingestEntry(t, "clip.mp4", "v1")
+	rec, err := log.AppendIntent(ctx, ingE)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catPath := filepath.Join(root, "meta", "catalog.toml")
+	if err := ReplayOp(ctx, log, cat, catPath, testNode, rec, replayClock()); err != nil {
+		t.Fatal(err)
+	}
+
+	// The original (off-node) identity to restore.
+	g := identity.Genesis{ContentSHA256: hexSha("orig"), OriginalPath: "orig/clip.mp4", IngestOpID: ingestOpID("orig/clip.mp4"), OriginNode: "home-pi"}
+	origID, err := identity.MintID(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RestoreIdentity(ctx, RestoreOpts{Backend: be, Log: log, Cat: cat, Node: testNode, Actor: "a", Now: replayClock()}, "clip.mp4", origID, g); err != nil {
+		t.Fatalf("RestoreIdentity (real writer): %v", err)
+	}
+
+	recs, _ := log.Read(ctx)
+	rebuilt, err := ProjectCatalog(&catalog.Catalog{Version: catalog.SchemaVersion, Node: testNode}, recs, testNode)
+	if err != nil {
+		t.Fatalf("ProjectCatalog: %v", err)
+	}
+	f, ok := rebuilt.Find("clip.mp4")
+	if !ok || f.ID != origID {
+		t.Fatalf("restore not projected: %+v ok=%v", f, ok)
+	}
+	if f.Genesis != catalog.Genesis(g) {
+		t.Errorf("restored genesis not reconstructed: %+v", f.Genesis)
+	}
+	if got, _ := identity.MintID(identity.Genesis(f.Genesis)); got != f.ID {
+		t.Errorf("rebuilt entry does not self-certify: genesis mints %s, id %s", got, f.ID)
+	}
+}
+
+// TestProjectCatalogCrossMoveArgs (fix-35-D) projects the cross-member move op
+// shapes the merged vault_mv writer emits (canonical un-prefixed genesis keys):
+// the source record (moved_to set) drops the entry; the dest record (id+dest_path
+// +genesis) reconstructs it.
+func TestProjectCatalogCrossMoveArgs(t *testing.T) {
+	ctx := context.Background()
+	g := identity.Genesis{ContentSHA256: hexSha("mv"), OriginalPath: "a.bin", IngestOpID: ingestOpID("a.bin"), OriginNode: "src"}
+	fileID, _ := identity.MintID(g)
+
+	// dest node: only the arrival OpMove record (no prior ingest).
+	destLog, _, _ := replayEnv(t)
+	dm, err := destLog.AppendIntent(ctx, wal.Entry{
+		OpID: wal.NewOpID(), OpType: wal.OpMove, BlobRefs: []string{fileID}, Actor: "a", CreatedAt: replayClock()(),
+		Args: map[string]string{
+			"id": fileID, "from": "src", "src_path": "a.bin", "dest_path": "moved/a.bin",
+			"content_sha256": g.ContentSHA256, "original_path": g.OriginalPath,
+			"ingest_op_id": g.IngestOpID, "origin_node": g.OriginNode,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := destLog.MarkDone(ctx, dm.Entry.OpID); err != nil {
+		t.Fatal(err)
+	}
+	destRecs, _ := destLog.Read(ctx)
+	destCat, err := ProjectCatalog(&catalog.Catalog{Version: catalog.SchemaVersion, Node: "dst"}, destRecs, "dst")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, ok := destCat.Find("moved/a.bin")
+	if !ok || f.ID != fileID || f.Genesis != catalog.Genesis(g) {
+		t.Fatalf("cross-move dest row not reconstructed from canonical args: %+v ok=%v", f, ok)
+	}
+
+	// source node: ingest then a moved_to record → entry dropped.
+	srcLog, srcCat, srcPath := replayEnv(t)
+	ingE := wal.Entry{OpID: ingestOpID("a.bin"), OpType: wal.OpIngest, BlobRefs: []string{fileID}, Actor: "a", CreatedAt: replayClock()(),
+		Args: map[string]string{"path": "a.bin", "content_sha256": g.ContentSHA256, "origin_node": "src", "sync_mode": catalog.SyncModeManual, "size": "5"}}
+	rec, _ := srcLog.AppendIntent(ctx, ingE)
+	if err := ReplayOp(ctx, srcLog, srcCat, srcPath, "src", rec, replayClock()); err != nil {
+		t.Fatal(err)
+	}
+	sm, _ := srcLog.AppendIntent(ctx, wal.Entry{OpID: wal.NewOpID(), OpType: wal.OpMove, BlobRefs: []string{fileID}, Actor: "a", CreatedAt: replayClock()(),
+		Args: map[string]string{"from": "src", "to": "dst", "moved_to": "dst", "src_path": "a.bin", "dest_path": "moved/a.bin"}})
+	if err := srcLog.MarkDone(ctx, sm.Entry.OpID); err != nil {
+		t.Fatal(err)
+	}
+	srcRecs, _ := srcLog.Read(ctx)
+	rebuiltSrc, err := ProjectCatalog(&catalog.Catalog{Version: catalog.SchemaVersion, Node: "src"}, srcRecs, "src")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := rebuiltSrc.Find("a.bin"); ok {
+		t.Error("cross-move source must drop the entry (file left the node)")
+	}
+}
+
+// TestProjectCatalogSyncModeArgs (fix-35-D) projects OpSyncMode using the merged
+// writer keys (to_mode/new_sha256/last_scanned).
+func TestProjectCatalogSyncModeArgs(t *testing.T) {
+	ctx := context.Background()
+	log, cat, catPath := replayEnv(t)
+	ingE, _ := ingestEntry(t, "f.bin", "x")
+	rec, _ := log.AppendIntent(ctx, ingE)
+	if err := ReplayOp(ctx, log, cat, catPath, testNode, rec, replayClock()); err != nil {
+		t.Fatal(err)
+	}
+	sm, _ := log.AppendIntent(ctx, wal.Entry{OpID: wal.NewOpID(), OpType: wal.OpSyncMode, BlobRefs: []string{ingE.BlobRefs[0]}, Actor: "a", CreatedAt: replayClock()(),
+		Args: map[string]string{"id": ingE.BlobRefs[0], "path": "f.bin", "from_mode": "manual", "to_mode": "git", "new_sha256": hexSha("new"), "last_scanned": "2026-06-11T12:00:00Z"}})
+	if err := log.MarkDone(ctx, sm.Entry.OpID); err != nil {
+		t.Fatal(err)
+	}
+	recs, _ := log.Read(ctx)
+	rebuilt, err := ProjectCatalog(&catalog.Catalog{Version: catalog.SchemaVersion, Node: testNode}, recs, testNode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, _ := rebuilt.Find("f.bin")
+	if f.SyncMode != "git" || f.SHA256 != hexSha("new") {
+		t.Fatalf("sync-mode not projected from to_mode/new_sha256: %+v", f)
+	}
+}
+
+// TestProjectCatalogSkipsPasswd: a passwd op (no file-list effect) is skipped.
+func TestProjectCatalogSkipsPasswd(t *testing.T) {
+	ctx := context.Background()
+	log, _, _ := replayEnv(t)
+	ingE, _ := ingestEntry(t, "a.bin", "x")
+	rec, _ := log.AppendIntent(ctx, ingE)
+	if err := log.MarkDone(ctx, rec.Entry.OpID); err != nil {
+		t.Fatal(err)
+	}
+	pw, _ := log.AppendIntent(ctx, wal.Entry{OpID: wal.NewOpID(), OpType: wal.OpPasswd, BlobRefs: []string{"meta/auth/passwd"}, Actor: "a", CreatedAt: replayClock()()})
+	if err := log.MarkDone(ctx, pw.Entry.OpID); err != nil {
+		t.Fatal(err)
+	}
+	recs, _ := log.Read(ctx)
+	rebuilt, err := ProjectCatalog(&catalog.Catalog{Version: catalog.SchemaVersion, Node: testNode}, recs, testNode)
+	if err != nil {
+		t.Fatalf("passwd op must be skipped, not error: %v", err)
+	}
+	if len(rebuilt.Files) != 1 {
+		t.Errorf("passwd op must not affect the file list, got %d", len(rebuilt.Files))
 	}
 }

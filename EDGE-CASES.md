@@ -756,3 +756,55 @@
   require them.
 - **Follow-up:** task-50 — tighten mustBeGated to include restore-identity + gc once
   annotated by their owners.
+
+- **Date / Task:** 2026-06-11 / task-39 (fedtest harness — backend serialization)
+- **Edge case:** the WAL-as-lock race scenario (two ops on one blob) is only
+  arbitrated correctly when backend calls serialize. FSBackend's Put is NOT
+  create-exclusive under genuine parallelism (two racers can both rename, last
+  wins), so a parallel test against a raw FSBackend sees BOTH AppendIntents
+  succeed (0 op-in-flight) — the unit tests dodged this with a syncBackend wrapper.
+- **Decision:** chose — the harness Member serializes ALL backend access behind a
+  per-member mutex, modelling a single client over one SSH/taildrive channel (the
+  Q3/D12 single-active-writer assumption). This makes WAL-as-lock deterministic
+  (one intent wins the slot, the loser retries and sees the pending intent →
+  ErrOpInFlight) without depending on filesystem create-exclusivity. Scenario runs
+  -race clean.
+- **Follow-up:** Block 5 / GH candidate — a create-exclusive backend Put for true
+  N>1-writer concurrency (the real fix beyond the single-client model).
+
+- **Date / Task:** 2026-06-11 / task-39 (crash recovery — verify vs ops division)
+- **Edge case:** scenario 2 expected verify to report PendingOpState for crashes
+  at after-intent / after-bytes / after-catalog. But verify (task-38) only emits
+  PendingOpState once the catalog carries the row; a pre-catalog crash (intent
+  written, catalog not flushed) has no catalog row to reconcile, so verify is
+  silent for after-intent/after-bytes.
+- **Decision:** chose — the test asserts the torn op is ALWAYS detectable as a
+  pending WAL intent (the dedicated `ops`/`Pending` surface) for every step, and
+  that verify additionally reports PendingOpState for after-catalog. This is the
+  correct division of labor (pending sweep surfaces in-flight ops; verify
+  reconciles catalog↔disk↔lock), not a verify gap. ReplayOp completes the op in
+  all three cases; re-verify is clean.
+- **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / fix-35-A (ProjectCatalog full op vocabulary, projector-only) [SHIP-BLOCKER, review-35/45]
+- **Edge case:** ProjectCatalog reused ReplayOp's `applyOp`, whose `default` case
+  ERRORS on any op_type outside ingest/scan/move/delete. A real per-node WAL
+  routinely carries gc (auto-delete ON by default), restore, cross-member move,
+  sync_mode → `vault rebuild-catalog` hard-failed on essentially any real vault.
+  An earlier attempt also drifted on arg-key names (genesis_* prefixes) vs the
+  writers' canonical keys, and edited writer files owned by other workstreams.
+- **Decision:** chose — projector-only fix: a tolerant `projectOp` (separate from
+  the strict `applyOp` ReplayOp keeps) projects EVERY catalog-file-mutating op and
+  SKIPS roster/passwd/unknown, never erroring. It reads the MERGED writers'
+  canonical keys (un-prefixed `content_sha256/original_path/ingest_op_id/
+  origin_node` for restore + cross-move-dest genesis; `to_mode/new_sha256/
+  last_scanned` for sync_mode). gc → remove by id∈BlobRefs (skipping would
+  resurrect deleted-blob entries). cross-move source (moved_to) → drop; dest →
+  add. restore verifies the preimage self-certifies restored_id (tamper guard).
+  Did NOT touch restore.go/vault_mv.go/vault_syncmode.go (owned by #40 coder-a /
+  #41 coder-c, already merged) — projector consumes their args. The restore
+  round-trip test DRIVES THE REAL WRITER (ingest.RestoreIdentity) so a key drift
+  fails the test. SPEC §9c gains the full op→effect table + key list.
+- **Follow-up:** cross-move dest op does not journal sync_mode/size → rebuilt
+  moved-in rows default sync_mode=manual (documented; conservative for gc). A
+  future writer addition could close that advisory gap.

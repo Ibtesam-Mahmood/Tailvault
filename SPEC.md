@@ -469,9 +469,46 @@ nothing). This is the SG-6 disaster-recovery story for a **missing or torn**
 The pure primitive is `ingest.ProjectCatalog(base, recs, node)` (§8b): it takes a
 `base` carrying the header (`version`, `vault_name`, `node`, `[federation]`), the
 chain-verified `recs` from `wal.Log.Read`, and returns the rebuilt catalog
-Canonicalized for the caller to persist. It shares its op-application core
-(`applyOp`) with forward replay (`ingest.ReplayOp`), so a rebuild can never diverge
-from how ops were originally applied.
+Canonicalized for the caller to persist.
+
+**Projection covers the FULL per-node op vocabulary.** A real vault's WAL carries
+far more than ingest/scan: gc (routine — auto-delete is on by default), restore,
+cross-member move, and sync_mode ops. Projection (`projectOp`) MUST apply every
+catalog-file-list-mutating op and SKIP the rest — it must NEVER hard-error on an
+op type, or `rebuild-catalog` would fail on any vault that has merely run gc.
+ReplayOp's catch-up core (`applyOp`) stays STRICT (ingest/scan/move/delete only;
+an unexpected type is a bug to surface for `ops retry`); projection is the tolerant
+counterpart. Per op:
+
+| op | projection effect | op args read |
+|---|---|---|
+| `ingest` | add the row | (genesis from the op) |
+| `scan` | update `sha256` + freshness | `path`, `new_sha256` |
+| `move` (intra) | rewrite the entry's `path` (id/genesis kept) | `from`, `to` |
+| `move` (cross, source) | **remove** the entry — file left this node | `moved_to`, `blob_refs` |
+| `move` (cross, dest) | **add** the arrived row | `id`, `dest_path`, `content_sha256`, `original_path`, `ingest_op_id`, `origin_node` |
+| `delete` | remove the entry | `path` |
+| `gc` | remove every entry whose `id ∈ blob_refs` | `blob_refs` |
+| `restore` | swap the entry's `id`+`genesis` to the restored identity | `path`, `restored_id`, `content_sha256`, `original_path`, `ingest_op_id`, `origin_node` |
+| `sync_mode` | set `sync_mode`+`sha256`+`last_scanned` | `path`, `to_mode`, `new_sha256`, `last_scanned` |
+| `roster`, `passwd` | **skip** — no file-list effect | — |
+| unknown/future | **skip** — never error | — |
+
+**Identity-creating ops carry their genesis preimage.** `restore` (original genesis
+minted off-node from a receipt) and the dest side of a cross-member `move` (genesis
+minted on the *source* node) establish a row's identity from a genesis NOT
+otherwise in this node's WAL, so those ops record the full preimage in
+`content_sha256`/`original_path`/`ingest_op_id`/`origin_node` args (the same key
+names OpIngest uses). `restored_id`/`id` == hash(genesis); projection verifies
+this (a tamper guard) so the rebuilt row self-certifies.
+
+**Limitations (advisory, identity-exact):** a rebuilt restored/moved/scanned row
+takes the op's `created_at` for its `updated_at`/`last_scanned` rather than the
+live wall-clock the forward writer stamped (the immutable op time is the only
+deterministic source); and a cross-member-moved row's `sync_mode`/`size` are not
+journaled on the dest move op, so a rebuilt moved-in row defaults `sync_mode` to
+`manual` (conservative for gc — never wrongly collectable). All identity-critical
+fields (id, genesis, sha256, path) are exact.
 
 The explicit, node-mutating, **password-gated** surface is
 `tailvault vault rebuild-catalog <location>` (§16 gated set rationale applies — it

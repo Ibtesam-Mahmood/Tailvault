@@ -32,6 +32,7 @@ import (
 	"github.com/Ibtesam-Mahmood/tailvault/internal/fed"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/identity"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/ingest"
+	"github.com/Ibtesam-Mahmood/tailvault/internal/locations"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/lock"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/tserr"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/wal"
@@ -92,23 +93,50 @@ type Fed struct {
 // New builds an N-member federation: a deterministic fed_id, each member an
 // FSBackend over a fresh t.TempDir(), every member's catalog seeded with the
 // shared [federation] roster (active, joined at baseTime). All members start up.
+//
+// SAME-NODE / CLI mode (GOAL.md 7b): New sandboxes the process environment
+// (XDG_CONFIG_HOME + HOME → fresh temp dirs via t.Setenv) and REGISTERS every
+// member as a taildrive location in the sandboxed locations.toml, so the harness
+// members are resolvable by the REAL CLI — a test can drive
+// `newRootCmd().Execute()` (vault init/put/mv/rm/sync-mode/get/heal/…) against a
+// member and assert on real on-disk blobs/catalog/WAL + real exit codes. Members
+// are always-reachable local-FS nodes (no Tailscale). The stub seams
+// (Probe/Querier/Resolver/SetDown) remain for the pure-stub federation tests.
 func New(t *testing.T, names ...string) *Fed {
 	t.Helper()
 	if len(names) == 0 {
 		t.Fatal("fedtest.New: need at least one member name")
 	}
+	// Sandbox the user-level config + home so the real CLI (locations.toml,
+	// receipts, caches) resolves to per-test temp dirs, never the developer's.
+	cacheDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cacheDir)
+	t.Setenv("HOME", t.TempDir())
+
 	f := &Fed{
 		FedID:    "fed-" + shortHash(names...),
-		CacheDir: t.TempDir(),
+		CacheDir: cacheDir,
 		byName:   make(map[string]*Member, len(names)),
 	}
 	members := make([]catalog.Member, 0, len(names))
+	reg, err := locations.Load() // empty under the fresh sandboxed XDG
+	if err != nil {
+		t.Fatalf("fedtest: load locations: %v", err)
+	}
 	for _, name := range names {
 		root := t.TempDir()
 		m := &Member{Name: name, Node: name, Root: root, fs: backend.NewFSBackend(root)}
 		f.Members = append(f.Members, m)
 		f.byName[name] = m
 		members = append(members, catalog.Member{Name: name, Node: name, JoinedAt: baseTime, Status: catalog.StatusActive})
+		// Register the member as a taildrive (local-FS) location so `tailvault
+		// vault …` resolves it through the real registry.
+		if err := reg.Add(name, locations.Location{Node: name, BasePath: root, Backend: locations.BackendTaildrive, Share: "vault"}); err != nil {
+			t.Fatalf("fedtest: register location %q: %v", name, err)
+		}
+	}
+	if err := reg.Save(); err != nil {
+		t.Fatalf("fedtest: save locations: %v", err)
 	}
 	sort.Slice(members, func(i, j int) bool { return members[i].Name < members[j].Name })
 	f.Roster = fed.Roster{FedID: f.FedID, Members: members}

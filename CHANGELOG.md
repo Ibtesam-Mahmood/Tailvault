@@ -6,6 +6,28 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.92 — 2026-06-11
+
+### Fixed
+- **`ProjectCatalog` projects the full WAL op vocabulary (fix #39 / 35-A,
+  SHIP-BLOCKER — closes the SG-8 family).** The catalog-rebuild primitive reused
+  ReplayOp's strict `applyOp`, whose `default` case errored on any op_type outside
+  ingest/scan/move/delete — so `vault rebuild-catalog` hard-failed on any vault that
+  had run gc (auto-delete is on by default), restore, cross-member move, or
+  sync_mode. New tolerant `projectOp` (separate from the strict `applyOp` that
+  ReplayOp keeps) projects EVERY catalog-file-mutating op and SKIPS roster/passwd/
+  unknown, never erroring: gc → remove by id ∈ BlobRefs; cross-move source
+  (moved_to) → drop, dest → add; restore → id+genesis swap that self-certifies
+  restored_id; sync_mode → set mode/sha/last_scanned. Reads the **merged canonical
+  un-prefixed keys** (`content_sha256`/`original_path`/`ingest_op_id`/`origin_node`
+  for restore + cross-move-dest genesis; `to_mode`/`new_sha256`/`last_scanned` for
+  sync_mode) — does NOT touch restore.go/vault_mv.go/vault_syncmode.go (consumes the
+  #40/#41 merged writers). The restore round-trip test drives the REAL writer
+  (`ingest.RestoreIdentity`) so an arg-key drift fails the test. SPEC §9c gains the
+  full op→effect table. (Advisory residual: the cross-move dest op doesn't journal
+  sync_mode/size, so a rebuilt moved-in row defaults sync_mode=manual — conservative
+  for gc, documented.)
+
 ## v0.0.91 — 2026-06-11
 
 ### Added
