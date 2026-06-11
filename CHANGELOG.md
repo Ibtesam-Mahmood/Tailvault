@@ -6,6 +6,17 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.55 — 2026-06-11
+
+Phase 3 (task-33) — `vault init` bootstrap. New `vault` command group + `internal/ingest`
+bootstrap/ignore.
+
+- `internal/ingest`: `.tailvaultignore` (§9b) matching + deterministic bootstrap that
+  scans, ingests, and writes catalog/WAL/genesis with byte-identical resume.
+- `internal/cli/vault.go` (newVaultCmd, registered once in root.go alongside node + fed)
+  + `vault init`. DG-33.1: SSH remote bootstrap returns TV-CFG "not yet supported"
+  (local/taildrive roots work). wal.ErrChainBroken→TV-FED-03 boundary deferred (SG-3/F4).
+
 ## v0.0.54 — 2026-06-11
 
 Phase 3 (task-32) — federation resolution engine + `TV-FED-*` error codes (SPEC v2

@@ -57,6 +57,36 @@
   durable. (Resolves the QA "prune can brick the WAL" finding.)
 - **Follow-up:** none
 
+- **Date / Task:** 2026-06-11 / task-33 (vault init bootstrap)
+- **Edge case:** byte-identical resume requires stable file IDs and timestamps
+  across an interrupted+resumed run, but random op ids / wall-clock timestamps
+  differ between runs.
+- **Decision:** chose — bootstrap op ids are DERIVED DETERMINISTICALLY from the
+  vault-relative path (UUIDv4-formatted but name-based), and catalog row
+  timestamps come from the immutable WAL entry's CreatedAt (with an injectable
+  clock for tests), so resume replays/reconstructs identical rows. The catalog is
+  a projection of the WAL (the recovery record); flushes are batched (default
+  N=256) with done markers written only after each batch's catalog flush.
+- **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-33 (vault init bootstrap)
+- **Edge case:** symlinks in the storage root (cycles / out-of-root escapes).
+- **Decision:** chose — BuildPlan skips symlinks entirely (neither followed nor
+  ingested). Safe default per the task gotcha.
+- **Follow-up:** Block 7 candidate (decide if any symlink policy is wanted).
+
+- **Date / Task:** 2026-06-11 / task-33 (vault init bootstrap)
+- **Edge case:** `vault init` walks+hashes the storage root locally, but an SSH
+  location has no locally-accessible root; and a wal.ErrChainBroken at the command
+  boundary should map to TV-FED-03 (exit 6), whose tserr constructor is owned by
+  task-32.
+- **Decision:** punted — SSH remote bootstrap returns a clear TV-CFG error
+  ("not yet supported; run on a taildrive/local root") (DG-33.1); chain-break
+  currently surfaces as the plain wal error (exit 1) until task-32's TV-FED tserr
+  is wired in on integration.
+- **Follow-up:** GH candidate (SSH remote bootstrap); wire TV-FED-03 mapping at
+  integration.
+
 - **Date / Task:** 2026-06-11 / task-30 (internal/identity)
 - **Edge case:** the genesis canonical form (§11) is DOUBLE-quoted explicit byte
   construction, while catalog (§9) and WAL (§10) canonical forms are go-toml/v2
