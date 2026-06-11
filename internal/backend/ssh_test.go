@@ -119,6 +119,29 @@ func TestSSH_Put_Dedup(t *testing.T) {
 	}
 }
 
+func TestSSH_PutOverwrite_NoDedupAtomicMv(t *testing.T) {
+	// PutOverwrite must NOT probe Stat for dedup (it always replaces) and must
+	// land via a tmp+mv (atomic overwrite).
+	var sawStat bool
+	r := &scriptedRunner{handle: func(remoteCmd string, in io.Reader, _ io.Writer) ([]byte, error) {
+		if strings.Contains(remoteCmd, "wc -c") {
+			sawStat = true
+		}
+		io.Copy(io.Discard, in) // drain stdin
+		return nil, nil
+	}}
+	s := newSSH(r)
+	if err := s.PutOverwrite(context.Background(), "meta/catalog.toml", strings.NewReader("data")); err != nil {
+		t.Fatalf("PutOverwrite: %v", err)
+	}
+	if sawStat {
+		t.Error("PutOverwrite must not issue a Stat dedup probe")
+	}
+	if len(r.calls) != 1 || !strings.Contains(r.calls[0], "cat >") || !strings.Contains(r.calls[0], "mv ") {
+		t.Errorf("PutOverwrite should be a single tmp+mv write, got %v", r.calls)
+	}
+}
+
 func TestSSH_Put_PermissionDenied_TVNODE02(t *testing.T) {
 	r := &scriptedRunner{handle: func(remoteCmd string, in io.Reader, _ io.Writer) ([]byte, error) {
 		if strings.Contains(remoteCmd, "wc -c") {

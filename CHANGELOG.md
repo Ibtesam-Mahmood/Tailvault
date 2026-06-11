@@ -6,6 +6,21 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.63 — 2026-06-11
+
+Phase 4 (SG-6 part 1) — atomic-overwrite `Backend` primitive for mutable keys.
+Adds `PutOverwrite(ctx, key, r) error` to the `Backend` interface: FSBackend +
+Taildrive share `atomicReplace` (temp+fsync+rename, no dedup), SSH does
+`cat>tmp && mv` (no dedup probe). The single primitive the SG-6 call-site
+migrations route through.
+
+- `internal/backend`: `PutOverwrite` on the interface + all impls; contract test +
+  SSH test. The two repo test doubles (wal syncBackend, push forgetfulBackend)
+  updated to satisfy the wider interface.
+- SG-6 remaining (task #35): migrate gc Delete-then-Put → `PutOverwrite`, gc
+  local-root catalog → `WriteAtomic`, and coder-c's remote passwd write → `PutOverwrite`.
+  tasks 33/34 need no migration (already overwrite via local `catalog.WriteAtomic`).
+
 ## v0.0.62 — 2026-06-11
 
 Phase 4 (task-36) — federated garbage collection. `internal/gc/fed.go`

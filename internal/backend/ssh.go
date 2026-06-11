@@ -182,6 +182,26 @@ func (s *SSH) Put(ctx context.Context, key string, r io.Reader) error {
 	return nil
 }
 
+// PutOverwrite atomically replaces a mutable key: stream stdin to a temp file
+// then `mv` it over the target (POSIX rename is an atomic overwrite on one
+// filesystem). Unlike Put it does NOT dedup on Stat, so an in-place update of a
+// mutable key (e.g. meta/catalog.toml) always lands.
+func (s *SSH) PutOverwrite(ctx context.Context, key string, r io.Reader) error {
+	if err := s.preflight(ctx); err != nil {
+		return err
+	}
+	full := s.remotePath(key)
+	dir := shellQuote(path.Dir(full))
+	dst := shellQuote(full)
+	tmp := shellQuote(full + ".tmp")
+	cmd := fmt.Sprintf("mkdir -p %s && cat > %s && mv %s %s", dir, tmp, tmp, dst)
+	stderr, err := s.ssh(ctx, r, nil, cmd)
+	if err != nil {
+		return classifyWrite(s.Node, stderr, err)
+	}
+	return nil
+}
+
 func (s *SSH) Delete(ctx context.Context, key string) error {
 	if err := s.preflight(ctx); err != nil {
 		return err

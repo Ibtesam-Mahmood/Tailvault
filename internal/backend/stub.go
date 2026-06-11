@@ -127,6 +127,14 @@ func (b *FSBackend) Put(ctx context.Context, key string, r io.Reader) error {
 	return nil
 }
 
+// PutOverwrite atomically replaces a mutable key (temp + fsync + rename); unlike
+// Put it does NOT dedup on Stat, so a second write with different bytes wins. It
+// does not touch the Puts counter (which tracks content-addressed object
+// transfers for dedup assertions, not in-place metadata overwrites).
+func (b *FSBackend) PutOverwrite(_ context.Context, key string, r io.Reader) error {
+	return atomicReplace(b.pathFor(key), r)
+}
+
 func (b *FSBackend) Delete(_ context.Context, key string) error {
 	err := os.Remove(b.pathFor(key))
 	if err != nil {

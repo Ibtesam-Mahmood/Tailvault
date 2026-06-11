@@ -13,6 +13,23 @@
 
 ## Entries
 
+- **Date / Task:** 2026-06-11 / SG-6 (atomic-overwrite backend primitive)
+- **Edge case:** `backend.Put` is create-only (dedups on Stat, no-ops on an
+  existing key) — correct for immutable `objects/<sha>`, but mutable keys like
+  `meta/catalog.toml` / `meta/auth/passwd` updated in place over the backend were
+  handled with Delete-then-Put, which is non-atomic (a crash in the window leaves
+  the node with no object).
+- **Decision:** chose — added `Backend.PutOverwrite(ctx,key,r)` (interface method,
+  so every backend MUST provide it — no silent non-atomic fallback): local backends
+  (FSBackend/Taildrive) use a shared temp+fsync+rename `atomicReplace`; SSH uses
+  `cat > tmp && mv` (POSIX atomic overwrite); neither dedups. Contract test asserts
+  replace-wins for FS+Taildrive; a scripted SSH test asserts no-dedup-probe + tmp+mv.
+  Callers persisting mutable keys over the backend (gc/fed PersistCatalog — coder-b)
+  migrate to it. (tasks 33/34 already overwrite via local catalog.WriteAtomic/
+  os.Rename, so they're unaffected.)
+- **Follow-up:** coder-b migrates gc/fed call sites; SSH-remote-catalog path can now
+  use PutOverwrite when built.
+
 - **Date / Task:** 2026-06-11 / task-27 (SPEC v2 freeze)
 - **Edge case:** task-27 §16 wrote the argon2id password line as
   `argon2id$v=19$...` (no leading `$`), but the PHC string standard — and what

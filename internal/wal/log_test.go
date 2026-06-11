@@ -426,6 +426,11 @@ func (s *syncBackend) Put(ctx context.Context, key string, r io.Reader) error {
 	defer s.mu.Unlock()
 	return s.b.Put(ctx, key, r)
 }
+func (s *syncBackend) PutOverwrite(ctx context.Context, key string, r io.Reader) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.PutOverwrite(ctx, key, r)
+}
 func (s *syncBackend) Delete(ctx context.Context, key string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

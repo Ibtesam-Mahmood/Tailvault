@@ -496,10 +496,11 @@ type forgetfulBackend struct{}
 func (forgetfulBackend) Stat(context.Context, string) (backend.Meta, error) {
 	return backend.Meta{Exists: false}, nil
 }
-func (forgetfulBackend) Get(context.Context, string, io.Writer) error   { return nil }
-func (forgetfulBackend) Put(context.Context, string, io.Reader) error   { return nil }
-func (forgetfulBackend) Delete(context.Context, string) error           { return nil }
-func (forgetfulBackend) List(context.Context, string) ([]string, error) { return nil, nil }
+func (forgetfulBackend) Get(context.Context, string, io.Writer) error          { return nil }
+func (forgetfulBackend) Put(context.Context, string, io.Reader) error          { return nil }
+func (forgetfulBackend) PutOverwrite(context.Context, string, io.Reader) error { return nil }
+func (forgetfulBackend) Delete(context.Context, string) error                  { return nil }
+func (forgetfulBackend) List(context.Context, string) ([]string, error)        { return nil, nil }
 func (forgetfulBackend) HashObject(context.Context, string) (string, error) {
 	return "", nil
 }

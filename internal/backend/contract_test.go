@@ -60,6 +60,26 @@ func RunContract(t *testing.T, b Backend) {
 		t.Fatalf("HashObject(absent): want TV-OBJ-01/ErrNotExist, got %v", err)
 	}
 
+	// PutOverwrite REPLACES a mutable key in place (unlike Put's content-addressed
+	// dedup): a second PutOverwrite with different bytes wins.
+	const mkey = "meta/catalog.toml"
+	if err := b.PutOverwrite(ctx, mkey, bytes.NewReader([]byte("v1"))); err != nil {
+		t.Fatalf("PutOverwrite #1: %v", err)
+	}
+	if err := b.PutOverwrite(ctx, mkey, bytes.NewReader([]byte("v2-longer"))); err != nil {
+		t.Fatalf("PutOverwrite #2 (replace): %v", err)
+	}
+	var ow bytes.Buffer
+	if err := b.Get(ctx, mkey, &ow); err != nil {
+		t.Fatalf("Get after overwrite: %v", err)
+	}
+	if ow.String() != "v2-longer" {
+		t.Fatalf("PutOverwrite did not replace: got %q, want %q", ow.String(), "v2-longer")
+	}
+	if err := b.Delete(ctx, mkey); err != nil {
+		t.Fatalf("cleanup Delete(mkey): %v", err)
+	}
+
 	// List by prefix finds it; an unrelated prefix does not.
 	keys, err := b.List(ctx, "objects/")
 	if err != nil {

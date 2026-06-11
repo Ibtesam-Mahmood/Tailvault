@@ -127,6 +127,15 @@ func (b *Taildrive) Put(ctx context.Context, key string, r io.Reader) error {
 	return nil
 }
 
+// PutOverwrite atomically replaces a mutable key on the mounted share
+// (temp + fsync + rename); unlike Put it does NOT dedup on Stat.
+func (b *Taildrive) PutOverwrite(_ context.Context, key string, r io.Reader) error {
+	if err := atomicReplace(b.pathFor(key), r); err != nil {
+		return b.nodeErr(err)
+	}
+	return nil
+}
+
 func (b *Taildrive) Delete(_ context.Context, key string) error {
 	if err := os.Remove(b.pathFor(key)); err != nil && !os.IsNotExist(err) {
 		return b.nodeErr(err)
