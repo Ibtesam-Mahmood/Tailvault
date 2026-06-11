@@ -2,6 +2,7 @@ package backend
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path"
@@ -72,6 +73,25 @@ func (b *Taildrive) Get(_ context.Context, key string, w io.Writer) error {
 	return err
 }
 
+// HashObject hashes the blob through the local mount: the share IS the locality,
+// so there is nothing remote to shell into on a passive Taildrive share. Missing
+// key -> TV-OBJ-01; any other os error -> a typed node condition.
+func (b *Taildrive) HashObject(_ context.Context, key string) (string, error) {
+	f, err := os.Open(b.pathFor(key))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", objMissing(key)
+		}
+		return "", b.nodeErr(err)
+	}
+	defer f.Close()
+	sum, err := hashReader(f)
+	if err != nil {
+		return "", b.nodeErr(err)
+	}
+	return sum, nil
+}
+
 func (b *Taildrive) Put(ctx context.Context, key string, r io.Reader) error {
 	m, err := b.Stat(ctx, key)
 	if err != nil {
@@ -106,6 +126,38 @@ func (b *Taildrive) Put(ctx context.Context, key string, r io.Reader) error {
 		return b.nodeErr(err)
 	}
 	return nil
+}
+
+// PutOverwrite atomically replaces a mutable key on the mounted share
+// (temp + fsync + rename); unlike Put it does NOT dedup on Stat.
+func (b *Taildrive) PutOverwrite(_ context.Context, key string, r io.Reader) error {
+	if err := atomicReplace(b.pathFor(key), r); err != nil {
+		return b.nodeErr(err)
+	}
+	return nil
+}
+
+// TransferFrom copies key from another Taildrive share directly into this one. A
+// passive share is a local mount, so the move is a root-to-root file copy through
+// the two mounts — the bytes pass node→node (or, here, mount→mount), never
+// through the orchestrating command's buffers. It reuses Put, inheriting the
+// atomic temp+rename write and content-addressed dedup. A non-Taildrive source
+// has no peer path into a passive share and is refused rather than relayed (D8 /
+// never-silent-success). Satisfies Transferer.
+func (b *Taildrive) TransferFrom(ctx context.Context, src Backend, key string) error {
+	st, ok := src.(*Taildrive)
+	if !ok {
+		return fmt.Errorf("backend/taildrive: no node-to-node path from %T into a taildrive share", src)
+	}
+	f, err := os.Open(st.pathFor(key))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return objMissing(key)
+		}
+		return st.nodeErr(err)
+	}
+	defer f.Close()
+	return b.Put(ctx, key, f)
 }
 
 func (b *Taildrive) Delete(_ context.Context, key string) error {

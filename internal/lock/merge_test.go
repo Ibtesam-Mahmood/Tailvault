@@ -155,3 +155,46 @@ func TestMerge_CanonicalOutput(t *testing.T) {
 		t.Errorf("merged output not byte-identical to canonical write:\n--merged--\n%s\n--fresh--\n%s", mb, fb)
 	}
 }
+
+// TestMerge_V2FederatedFieldsRideThrough: the union merge driver treats id +
+// genesis as ordinary per-entry fields — a disjoint federated entry survives
+// intact, a same-path/same-sha federated entry keeps its identity, and the
+// merged lock both self-certifies (Validate) and writes canonically. This is the
+// Task 24 driver's v2 regression guard (Task 35).
+func TestMerge_V2FederatedFieldsRideThrough(t *testing.T) {
+	g1, id1 := federatedGenesis(t, "a.pdf")
+	g2, id2 := federatedGenesis(t, "b.pdf")
+
+	ours := &Lock{Entries: []Entry{
+		{Path: "a.pdf", ID: id1, Genesis: g1, SHA256: "X", Location: "home-pi", PushedAt: ts("2026-06-10T00:00:00Z")},
+	}}
+	theirs := &Lock{Entries: []Entry{
+		// same path+sha as ours (identity must be preserved on the keep-once path)
+		{Path: "a.pdf", ID: id1, Genesis: g1, SHA256: "X", Location: "home-pi", PushedAt: ts("2026-06-10T00:00:00Z")},
+		// a disjoint federated entry only theirs has
+		{Path: "b.pdf", ID: id2, Genesis: g2, SHA256: "Y", Location: "office-nas", PushedAt: ts("2026-06-10T00:00:00Z")},
+	}}
+
+	m, err := Merge(nil, ours, theirs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, ok := m.Find("a.pdf")
+	if !ok || a.ID != id1 || a.Genesis == nil || *a.Genesis != *g1 {
+		t.Errorf("federated identity lost on same-path merge: %+v", a)
+	}
+	b, ok := m.Find("b.pdf")
+	if !ok || b.ID != id2 || b.Genesis == nil || *b.Genesis != *g2 {
+		t.Errorf("disjoint federated entry lost identity: %+v", b)
+	}
+	// The merged lock must be a valid, self-certifying v2 lock.
+	m.Version = SchemaVersion
+	if err := m.Validate(); err != nil {
+		t.Errorf("merged v2 lock should self-certify: %v", err)
+	}
+	// And it must write canonically (no panic / round-trips through Write+Load).
+	got, _ := writeAndReload(t, m)
+	if err := got.Validate(); err != nil {
+		t.Errorf("written merged lock should validate: %v", err)
+	}
+}

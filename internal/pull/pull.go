@@ -22,14 +22,22 @@ import (
 
 // Result summarises a pull run.
 type Result struct {
-	Fetched []string // paths materialised this run
-	Skipped []string // already-correct paths
+	Fetched  []string // paths materialised this run
+	Skipped  []string // already-correct paths
+	Warnings []string // per-entry WARN lines (moved/foreign/left-home) — D5/D28
 }
 
 // Deps are the injectable collaborators (testable with the stub Backend).
 type Deps struct {
 	Backend   backend.Backend
 	Preflight func(ctx context.Context) error // tserr on unreachable; nil = ok
+	// ResolveEntry is the federation seam (D5): for a FEDERATED lock entry (one
+	// carrying an ID) it resolves where the blob actually lives, returning the
+	// backend to fetch from and an optional warning. A PartialView or genuinely
+	// missing blob is returned as an error (TV-FED-01 exit 6 / TV-OBJ-01 exit 5)
+	// — hard-fail is reserved for unprovable states. nil ResolveEntry (or a
+	// non-federated entry) falls back to fetching from Backend (the v1 path).
+	ResolveEntry func(ctx context.Context, e lock.Entry) (be backend.Backend, warn string, err error)
 }
 
 // Run fetches and verifies every locked blob the working tree is missing.
@@ -57,7 +65,28 @@ func Run(ctx context.Context, root string, lk *lock.Lock, d Deps) (Result, error
 			res.Skipped = append(res.Skipped, e.Path)
 			continue
 		}
-		if err := fetchVerified(ctx, d.Backend, full, e.SHA256); err != nil {
+
+		// Choose the backend to fetch from. A federated entry (carries an ID)
+		// resolves through the federation seam so a moved/foreign home is found
+		// (WARN) rather than hard-failing; everything else fetches from the
+		// configured backend (the v1 path, byte-for-byte unchanged).
+		be := d.Backend
+		if d.ResolveEntry != nil && e.ID != "" {
+			rbe, warn, rerr := d.ResolveEntry(ctx, e)
+			if rerr != nil {
+				return Result{}, rerr // PartialView (exit 6) / Missing (exit 5)
+			}
+			if rbe != nil {
+				be = rbe
+			}
+			if warn != "" {
+				res.Warnings = append(res.Warnings, warn)
+			}
+		}
+
+		// The WARN path still verifies the fetched blob's sha256 against the lock
+		// entry — "found elsewhere" never relaxes integrity (task-35 gotcha).
+		if err := fetchVerified(ctx, be, full, e.SHA256); err != nil {
 			return Result{}, err
 		}
 		res.Fetched = append(res.Fetched, e.Path)

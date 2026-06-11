@@ -114,6 +114,48 @@ func (s *SSH) Get(ctx context.Context, key string, w io.Writer) error {
 	return nil
 }
 
+// Exec runs an arbitrary command ON the node over the SSH channel, piping in to
+// its stdin and capturing stderr. It is the seam for node-side helpers — e.g.
+// `tailvault node verify-passwd`, whose exit status authorizes a mutating op —
+// distinct from the object operations. A nil error means the remote command
+// exited 0; a non-nil error carries the captured stderr so the caller can
+// classify the remote exit (e.g. a TV-AUTH-01 rejection vs an ssh-level
+// failure). preflight maps an unreachable node to TV-NODE-01 before anything
+// runs. The bytes written to in never touch local disk and only the exit status
+// (not stdout) is relied upon, so a node-side secret check leaks nothing back.
+func (s *SSH) Exec(ctx context.Context, in io.Reader, remoteCmd string) (stderr []byte, err error) {
+	if perr := s.preflight(ctx); perr != nil {
+		return nil, perr
+	}
+	return s.ssh(ctx, in, nil, remoteCmd)
+}
+
+// HashObject runs `sha256sum` on the node and returns only the 64-hex digest —
+// the blob bytes never cross the tailnet (the DEV-C1 / GH-2 short-circuit). It
+// mirrors Get's missing-vs-failure classification: an explicit `[ -f ]` test
+// distinguishes a missing blob (TV-OBJ-01) from a node/permission failure
+// (TV-NODE-01/02). Output is parsed strictly — exactly 64 lowercase hex before
+// the first space, never a silent success on a misconfigured node.
+func (s *SSH) HashObject(ctx context.Context, key string) (string, error) {
+	if err := s.preflight(ctx); err != nil {
+		return "", err
+	}
+	p := shellQuote(s.remotePath(key))
+	// No `--` before the path: it is always an absolute, shell-quoted path, and
+	// busybox `sha256sum` does not accept the `--` end-of-options marker that
+	// coreutils does — dropping it keeps both helper families working.
+	cmd := fmt.Sprintf("if [ -f %s ]; then sha256sum %s; else echo %s >&2; exit 7; fi", p, p, missingMarker)
+	var buf bytes.Buffer
+	stderr, err := s.ssh(ctx, nil, &buf, cmd)
+	if err != nil {
+		if strings.Contains(string(stderr), missingMarker) {
+			return "", objMissing(key)
+		}
+		return "", classifyWrite(s.Node, stderr, err)
+	}
+	return parseSha256Sum(buf.String())
+}
+
 func (s *SSH) Put(ctx context.Context, key string, r io.Reader) error {
 	if err := s.preflight(ctx); err != nil {
 		return err
@@ -134,6 +176,65 @@ func (s *SSH) Put(ctx context.Context, key string, r io.Reader) error {
 	// mkdir parent; stream stdin to a tmp then atomically mv into place.
 	cmd := fmt.Sprintf("mkdir -p %s && cat > %s && mv %s %s", dir, tmp, tmp, dst)
 	stderr, err := s.ssh(ctx, r, nil, cmd)
+	if err != nil {
+		return classifyWrite(s.Node, stderr, err)
+	}
+	return nil
+}
+
+// PutOverwrite atomically replaces a mutable key: stream stdin to a temp file
+// then `mv` it over the target (POSIX rename is an atomic overwrite on one
+// filesystem). Unlike Put it does NOT dedup on Stat, so an in-place update of a
+// mutable key (e.g. meta/catalog.toml) always lands.
+func (s *SSH) PutOverwrite(ctx context.Context, key string, r io.Reader) error {
+	if err := s.preflight(ctx); err != nil {
+		return err
+	}
+	full := s.remotePath(key)
+	dir := shellQuote(path.Dir(full))
+	dst := shellQuote(full)
+	tmp := shellQuote(full + ".tmp")
+	cmd := fmt.Sprintf("mkdir -p %s && cat > %s && mv %s %s", dir, tmp, tmp, dst)
+	stderr, err := s.ssh(ctx, r, nil, cmd)
+	if err != nil {
+		return classifyWrite(s.Node, stderr, err)
+	}
+	return nil
+}
+
+// TransferFrom copies key from a source SSH node directly into this node's vault,
+// node-to-node over the tailnet. The transfer command runs ON THE DESTINATION
+// node (via Exec) and reaches back to the source — the client only sends the
+// command string and reads the exit status, so the bytes flow src→dest
+// peer-to-peer and never pass through the client process (D8/D11). rsync is
+// preferred (`rsync -a --partial`, a conservative flag set); its absence is a
+// clean fallback to `ssh src cat … > tmp && mv` run on the dest node, NOT an
+// error. The write lands via a temp + atomic mv (no torn blob). A non-SSH source
+// has no node-to-node path here and is refused rather than relayed. Satisfies
+// Transferer.
+func (s *SSH) TransferFrom(ctx context.Context, src Backend, key string) error {
+	ss, ok := src.(*SSH)
+	if !ok {
+		return fmt.Errorf("backend/ssh: no node-to-node path from %T into an ssh node", src)
+	}
+	if err := s.preflight(ctx); err != nil {
+		return err
+	}
+	srcTarget := shellQuote(ss.target())
+	srcPath := shellQuote(ss.remotePath(key))
+	dstFull := s.remotePath(key)
+	dstDir := shellQuote(path.Dir(dstFull))
+	dst := shellQuote(dstFull)
+	tmp := shellQuote(dstFull + ".tmp")
+	// Run on the dest node: try rsync (peer pull), else stream src→dest via a
+	// nested ssh, then atomically mv into place. Bytes never touch the client.
+	remote := fmt.Sprintf(
+		"mkdir -p %s && { rsync -a --partial -e ssh %s:%s %s 2>/dev/null || "+
+			"{ ssh %s cat %s > %s && mv %s %s; }; }",
+		dstDir, srcTarget, srcPath, dst,
+		srcTarget, srcPath, tmp, tmp, dst,
+	)
+	stderr, err := s.Exec(ctx, nil, remote)
 	if err != nil {
 		return classifyWrite(s.Node, stderr, err)
 	}
@@ -200,8 +301,44 @@ func classifyWrite(node string, stderr []byte, err error) error {
 	return fmt.Errorf("backend/ssh: %w", err)
 }
 
+// parseSha256Sum extracts the digest from `sha256sum` output. The format differs
+// subtly across coreutils ("<hex>  <name>") and busybox ("<hex>  <name>" or
+// "<hex> *<name>"), so only the leading whitespace-delimited token is trusted,
+// and it must be exactly 64 lowercase hex characters; anything else is an error,
+// never a silent success.
+func parseSha256Sum(out string) (string, error) {
+	fields := strings.Fields(out)
+	if len(fields) == 0 {
+		return "", fmt.Errorf("backend/ssh: empty sha256sum output")
+	}
+	digest := fields[0]
+	if len(digest) != 64 || !isLowerHex(digest) {
+		return "", fmt.Errorf("backend/ssh: unexpected sha256sum output %q", strings.TrimSpace(out))
+	}
+	return digest, nil
+}
+
+// isLowerHex reports whether s is non-empty and consists solely of 0-9 / a-f.
+func isLowerHex(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			return false
+		}
+	}
+	return true
+}
+
 // shellQuote single-quotes s for safe interpolation into a remote POSIX shell
 // command, escaping embedded single quotes.
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
+
+// ShellQuote exposes shellQuote so command-layer code building a remote command
+// for Exec (e.g. the node-side password verifier) can quote arguments with the
+// SAME escaping the backend uses internally.
+func ShellQuote(s string) string { return shellQuote(s) }

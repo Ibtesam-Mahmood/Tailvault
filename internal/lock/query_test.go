@@ -1,24 +1,38 @@
 package lock
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 )
 
 func TestParse(t *testing.T) {
-	data := []byte("version = 1\ngenerated_by = \"tailvault test\"\n\n" +
+	data := []byte("version = 2\ngenerated_by = \"tailvault test\"\n\n" +
 		"[[entry]]\npath = \"a.pdf\"\nsha256 = \"ab\"\nsize = 1\nlocation = \"home-pi\"\n" +
 		"pushed_at = 2026-06-10T18:22:04Z\npusher = \"x\"\nhistory = false\npreserve = false\n")
 	l, err := Parse(data)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if l.Version != 1 || len(l.Entries) != 1 || l.Entries[0].Path != "a.pdf" {
+	if l.Version != 2 || len(l.Entries) != 1 || l.Entries[0].Path != "a.pdf" {
 		t.Fatalf("Parse got %+v", l)
 	}
 	// Parse rejects malformed TOML.
 	if _, err := Parse([]byte("not = = toml")); err == nil {
 		t.Error("Parse should error on malformed TOML")
+	}
+}
+
+// TestParseVersionGate asserts D29: a v1 (or any non-2) lock is rejected with
+// ErrIncompatibleVersion — no tolerance machinery, recreate don't migrate.
+func TestParseVersionGate(t *testing.T) {
+	v1 := []byte("version = 1\ngenerated_by = \"x\"\n")
+	if _, err := Parse(v1); !errors.Is(err, ErrIncompatibleVersion) {
+		t.Fatalf("Parse(v1) err = %v, want ErrIncompatibleVersion", err)
+	}
+	// A lock with no version key (version 0) is equally rejected.
+	if _, err := Parse([]byte("generated_by = \"x\"\n")); !errors.Is(err, ErrIncompatibleVersion) {
+		t.Fatalf("Parse(no version) err = %v, want ErrIncompatibleVersion", err)
 	}
 }
 

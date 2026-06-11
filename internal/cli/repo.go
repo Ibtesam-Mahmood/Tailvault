@@ -21,6 +21,14 @@ const (
 	lockName   = "tailvault.lock"
 )
 
+// newTSClient constructs the tailscale client used for command-level preflight /
+// identity. It is a package var ONLY so the Block-4 multi-node suite can inject a
+// stub (a captured `tailscale status` fixture) and drive preflight-requiring
+// commands (gc/push/pull/status) end-to-end without a real tailnet. Production is
+// always tailscale.New(); tests restore it via cleanup. Test-only seam, matching
+// SetTestGateVerifier/SetTestGCProbe.
+var newTSClient = tailscale.New
+
 // findRepoRoot walks up from the current directory to the first directory that
 // contains a tailvault.toml, returning that directory.
 func findRepoRoot() (string, error) {
@@ -100,7 +108,7 @@ func resolveBackend(_ context.Context, cfg *config.Config) (backend.Backend, loc
 // mountpoint that exists but is unmounted/empty is not detected here — tracked
 // as a known v1 limitation; SSH is the hardened MVP path.)
 func preflightNode(ctx context.Context, loc locations.Location) error {
-	ts := tailscale.New()
+	ts := newTSClient()
 	if _, err := ts.Status(ctx); err != nil {
 		return err // already a typed TV-NET-01/02
 	}
@@ -122,7 +130,7 @@ func preflightNode(ctx context.Context, loc locations.Location) error {
 // whoisSelf resolves the local tailnet identity ("user@host") for the pusher
 // stamp; any failure returns an error so the caller falls back to git identity.
 func whoisSelf(ctx context.Context) (string, error) {
-	ts := tailscale.New()
+	ts := newTSClient()
 	st, err := ts.Status(ctx)
 	if err != nil {
 		return "", err

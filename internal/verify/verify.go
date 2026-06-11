@@ -55,7 +55,7 @@ func Run(ctx context.Context, b backend.Backend, lk *lock.Lock) (Report, error) 
 	}
 	for _, key := range keys {
 		want := strings.TrimPrefix(key, objectPrefix)
-		got, err := backend.HashObject(ctx, b, key)
+		got, err := b.HashObject(ctx, key)
 		if err != nil {
 			return rep, err
 		}

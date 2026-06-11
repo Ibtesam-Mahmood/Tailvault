@@ -238,3 +238,106 @@ func TestPull_MultipleEager_AndPartialStopsClean(t *testing.T) {
 		t.Errorf("two.pdf should remain a pointer, got %q", got2)
 	}
 }
+
+// genID is a 64-hex id stand-in for federated-entry tests (the pull engine never
+// re-hashes it; resolution + self-cert live above this layer).
+const genID = "9f2b1c4d8a019f2b1c4d8a019f2b1c4d8a019f2b1c4d8a019f2b1c4d8a01abcd"
+
+// TestPull_FederatedFoundElsewhere_WARN: a federated entry whose blob is fetched
+// from a resolver-supplied backend succeeds, records the fetch, and surfaces the
+// WARN line — integrity is still verified against the lock sha.
+func TestPull_FederatedFoundElsewhere_WARN(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	content := []byte("moved-bytes")
+	s := sha(content)
+
+	// The configured (home) backend is EMPTY; the elsewhere backend holds it.
+	home := backend.NewFSBackend(t.TempDir())
+	elsewhere := backend.NewFSBackend(t.TempDir())
+	_ = elsewhere.Put(ctx, "objects/"+s, bytes.NewReader(content))
+
+	writePointer(t, filepath.Join(root, "a.pdf"), s)
+	lk := &lock.Lock{Version: lock.SchemaVersion, Entries: []lock.Entry{
+		{Path: "a.pdf", ID: genID, SHA256: s, Size: 5, Location: "home-pi"},
+	}}
+
+	d := okDeps(home)
+	d.ResolveEntry = func(_ context.Context, e lock.Entry) (backend.Backend, string, error) {
+		return elsewhere, e.Path + " moved to office-nas — run `tailvault heal`", nil
+	}
+	res, err := Run(ctx, root, lk, d)
+	if err != nil {
+		t.Fatalf("pull: %v", err)
+	}
+	if len(res.Fetched) != 1 || len(res.Warnings) != 1 {
+		t.Fatalf("fetched=%v warnings=%v, want 1 each", res.Fetched, res.Warnings)
+	}
+	if !strings.Contains(res.Warnings[0], "office-nas") {
+		t.Errorf("warning should name the new home: %q", res.Warnings[0])
+	}
+	got, _ := os.ReadFile(filepath.Join(root, "a.pdf"))
+	if !bytes.Equal(got, content) {
+		t.Errorf("blob not materialised from the elsewhere backend: %q", got)
+	}
+	if home.Gets != 0 {
+		t.Errorf("home backend should not have served the blob, Gets=%d", home.Gets)
+	}
+}
+
+// TestPull_FederatedPartialView_HardFails: a resolver PartialView error aborts
+// pull for that entry (exit 6 class) and never overwrites the working file.
+func TestPull_FederatedPartialView_HardFails(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	s := sha([]byte("x"))
+	writePointer(t, filepath.Join(root, "a.pdf"), s)
+	lk := &lock.Lock{Version: lock.SchemaVersion, Entries: []lock.Entry{
+		{Path: "a.pdf", ID: genID, SHA256: s, Location: "home-pi"},
+	}}
+	d := okDeps(backend.NewFSBackend(t.TempDir()))
+	want := tserr.FedPartialViewErr("9f2b1c4d8a01", []string{"pi-2"}, nil)
+	d.ResolveEntry = func(_ context.Context, _ lock.Entry) (backend.Backend, string, error) {
+		return nil, "", want
+	}
+	_, err := Run(ctx, root, lk, d)
+	var te *tserr.Error
+	if !errors.As(err, &te) || te.Code != tserr.FedPartialView {
+		t.Fatalf("want TV-FED partial view, got %v", err)
+	}
+	got, _ := os.ReadFile(filepath.Join(root, "a.pdf"))
+	if !bytes.Contains(got, []byte("tailvault.v1")) {
+		t.Errorf("working file modified under partial view: %q", got)
+	}
+}
+
+// TestPull_NonFederatedEntry_IgnoresResolver: an entry with no ID never invokes
+// the federation seam (v1 path preserved even when a resolver is wired).
+func TestPull_NonFederatedEntry_IgnoresResolver(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	content := []byte("plain")
+	s := sha(content)
+	b := backend.NewFSBackend(t.TempDir())
+	_ = b.Put(ctx, "objects/"+s, bytes.NewReader(content))
+	writePointer(t, filepath.Join(root, "a.pdf"), s)
+	lk := &lock.Lock{Version: lock.SchemaVersion, Entries: []lock.Entry{
+		{Path: "a.pdf", SHA256: s, Location: "home-pi"}, // no ID
+	}}
+	called := false
+	d := okDeps(b)
+	d.ResolveEntry = func(_ context.Context, _ lock.Entry) (backend.Backend, string, error) {
+		called = true
+		return nil, "", errors.New("must not be called")
+	}
+	res, err := Run(ctx, root, lk, d)
+	if err != nil {
+		t.Fatalf("pull: %v", err)
+	}
+	if called {
+		t.Error("resolver invoked for a non-federated entry")
+	}
+	if len(res.Fetched) != 1 {
+		t.Errorf("fetched=%v, want a.pdf from configured backend", res.Fetched)
+	}
+}

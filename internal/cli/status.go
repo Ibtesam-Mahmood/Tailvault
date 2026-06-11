@@ -70,11 +70,16 @@ func newStatusCmd() *cobra.Command {
 // TV-CFG-01 config error (exit 2) at the command boundary per SPEC §5.
 func loadLockOrEmpty(path string) (*lock.Lock, error) {
 	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
-		return &lock.Lock{Version: 1}, nil
+		return &lock.Lock{Version: lock.SchemaVersion}, nil
 	}
 	lk, err := lock.Load(path)
 	if err != nil {
 		return nil, tserr.ConfigErr("load "+lockName, err)
+	}
+	// Self-certify the committed lock: a v1 lock (D29) or a torn id↔genesis
+	// pairing is a hard config failure (exit 2), never silently trusted.
+	if err := lk.Validate(); err != nil {
+		return nil, tserr.ConfigErr("validate "+lockName, err)
 	}
 	return lk, nil
 }

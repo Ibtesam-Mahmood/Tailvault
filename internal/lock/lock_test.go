@@ -7,7 +7,26 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Ibtesam-Mahmood/tailvault/internal/identity"
 )
+
+// federatedGenesis mints a valid genesis record + its self-certifying id, for v2
+// entry tests.
+func federatedGenesis(t *testing.T, origPath string) (*identity.Genesis, string) {
+	t.Helper()
+	g := identity.Genesis{
+		ContentSHA256: strings.Repeat("a", 64),
+		OriginalPath:  origPath,
+		IngestOpID:    "op-" + origPath,
+		OriginNode:    "home-pi",
+	}
+	id, err := identity.MintID(g)
+	if err != nil {
+		t.Fatalf("MintID: %v", err)
+	}
+	return &g, id
+}
 
 func fixedTime() time.Time {
 	return time.Date(2026, 6, 10, 18, 22, 4, 0, time.UTC)
@@ -15,7 +34,7 @@ func fixedTime() time.Time {
 
 func sampleLock() *Lock {
 	return &Lock{
-		Version:     1,
+		Version:     SchemaVersion,
 		GeneratedBy: "tailvault 0.1.0",
 		Entries: []Entry{
 			{
@@ -165,6 +184,86 @@ func TestPushedAtUTC(t *testing.T) {
 	}
 	if !got.Entries[0].PushedAt.Equal(fixedTime()) {
 		t.Errorf("instant changed: %v", got.Entries[0].PushedAt)
+	}
+}
+
+// TestV2FederatedEntryRoundTrip: an entry carrying id + genesis round-trips
+// byte-faithfully, the genesis survives, and the canonical field order places
+// id + genesis immediately after path (SPEC v2 §2).
+func TestV2FederatedEntryRoundTrip(t *testing.T) {
+	g, id := federatedGenesis(t, "pnp/board.pdf")
+	in := &Lock{Entries: []Entry{{
+		Path: "pnp/board.pdf", ID: id, Genesis: g,
+		SHA256: "9f2b1c", Size: 7, Location: "home-pi", PushedAt: fixedTime(),
+	}}}
+	got, raw := writeAndReload(t, in)
+	if got.Entries[0].ID != id {
+		t.Errorf("id lost on round-trip: %q", got.Entries[0].ID)
+	}
+	if got.Entries[0].Genesis == nil || *got.Entries[0].Genesis != *g {
+		t.Errorf("genesis lost/changed: %+v", got.Entries[0].Genesis)
+	}
+	// Canonical field order: id then genesis, both before sha256.
+	s := string(raw)
+	ip, gp, sp := strings.Index(s, "id ="), strings.Index(s, "genesis ="), strings.Index(s, "sha256 =")
+	if !(ip >= 0 && gp > ip && sp > gp) {
+		t.Errorf("field order wrong (want path,id,genesis,sha256):\n%s", s)
+	}
+	// A self-certifying lock validates.
+	if err := got.Validate(); err != nil {
+		t.Errorf("round-tripped federated lock should validate: %v", err)
+	}
+}
+
+// TestV2NonFederatedEntryOmitsIDGenesis: an empty-id entry (non-federated vault)
+// is legal and emits neither id nor genesis keys.
+func TestV2NonFederatedEntryOmitsIDGenesis(t *testing.T) {
+	in := &Lock{Entries: []Entry{{
+		Path: "x.pdf", SHA256: "ab", Size: 1, Location: "l", PushedAt: fixedTime(),
+	}}}
+	got, raw := writeAndReload(t, in)
+	s := string(raw)
+	if strings.Contains(s, "id =") || strings.Contains(s, "genesis") {
+		t.Errorf("non-federated entry must omit id/genesis:\n%s", s)
+	}
+	if err := got.Validate(); err != nil {
+		t.Errorf("non-federated lock should validate: %v", err)
+	}
+}
+
+// TestValidateSelfCertification: a perturbed id (or genesis) fails Validate — a
+// torn id↔genesis pairing is rejected as corrupt.
+func TestValidateSelfCertification(t *testing.T) {
+	g, id := federatedGenesis(t, "pnp/board.pdf")
+
+	// Perturbed id: genesis no longer hashes to it.
+	bad := &Lock{Version: SchemaVersion, Entries: []Entry{{
+		Path: "p", ID: id[:62] + "ff", Genesis: g, SHA256: "x", PushedAt: fixedTime(),
+	}}}
+	if err := bad.Validate(); err == nil {
+		t.Error("perturbed id should fail self-certification")
+	}
+
+	// id present but no genesis: cannot self-certify.
+	noGen := &Lock{Version: SchemaVersion, Entries: []Entry{{
+		Path: "p", ID: id, SHA256: "x", PushedAt: fixedTime(),
+	}}}
+	if err := noGen.Validate(); err == nil {
+		t.Error("id without genesis should fail Validate")
+	}
+
+	// genesis present but no id: malformed (a backup with no key).
+	noID := &Lock{Version: SchemaVersion, Entries: []Entry{{
+		Path: "p", Genesis: g, SHA256: "x", PushedAt: fixedTime(),
+	}}}
+	if err := noID.Validate(); err == nil {
+		t.Error("genesis without id should fail Validate")
+	}
+
+	// Wrong version fails regardless of entries.
+	wrongVer := &Lock{Version: 1}
+	if err := wrongVer.Validate(); err == nil {
+		t.Error("v1 lock should fail Validate")
 	}
 }
 
