@@ -6,6 +6,17 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.71 — 2026-06-11
+
+Phase 4 (task-48 engine) — restore-identity core. `ingest.RestoreIdentity`
+re-establishes a file's genesis identity from a trusted receipt / record / lock
+source, logged as a `restore` WAL op. Self-contained engine (the `vault
+restore-identity` command wiring follows).
+
+- `internal/ingest/restore.go` + test; `internal/identity` gains `VerifyID` +
+  `ReadReceiptFile`/`ReadRecordFile`; `internal/wal` adds `OpRestore` ("restore");
+  SPEC §10 op_type list += `restore` (mandated by task-48, like OpPasswd/DEV-46.6).
+
 ## v0.0.70 — 2026-06-11
 
 Phase 4 (task-46 enforcement seam) — shared location resolver + auth gate for the

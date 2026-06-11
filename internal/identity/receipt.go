@@ -34,6 +34,36 @@ func DefaultReceiptDir() (string, error) {
 	return filepath.Join(home, ".tailvault", "receipts"), nil
 }
 
+// ReadReceiptFile decodes a pull-receipt TOML at an arbitrary path (a
+// user-supplied recovery artifact — treat as untrusted; decode strict). Used by
+// `vault restore-identity --receipt <file>` (Task 48).
+func ReadReceiptFile(path string) (Receipt, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return Receipt{}, err
+	}
+	var r Receipt
+	if err := toml.Unmarshal(b, &r); err != nil {
+		return Receipt{}, fmt.Errorf("identity: decode receipt %s: %w", path, err)
+	}
+	return r, nil
+}
+
+// ReadRecordFile decodes a raw genesis-record TOML at path (the four §11 fields).
+// Used by `vault restore-identity --record <file>` (Task 48). Untrusted input —
+// decode strict; the caller verifies self-certification before any use.
+func ReadRecordFile(path string) (Genesis, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return Genesis{}, err
+	}
+	var g Genesis
+	if err := toml.Unmarshal(b, &g); err != nil {
+		return Genesis{}, fmt.Errorf("identity: decode record %s: %w", path, err)
+	}
+	return g, nil
+}
+
 // WriteReceipt atomically writes a receipt to dir/<id>.toml. It refuses a
 // receipt whose genesis does not self-certify its id — a corrupt recovery
 // artifact is worse than none.

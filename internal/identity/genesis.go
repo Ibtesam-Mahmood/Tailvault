@@ -93,6 +93,17 @@ func MintID(g Genesis) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
+// VerifyID validates the record and returns its self-certifying id (MintID after
+// Validate). It is the single entry point restore-identity (Task 48) uses to turn
+// an untrusted record into its proven id; the caller then cross-checks against
+// any id the source carried.
+func VerifyID(g Genesis) (string, error) {
+	if err := g.Validate(); err != nil {
+		return "", err
+	}
+	return MintID(g)
+}
+
 // Verify reports whether g self-certifies the claimed id (MintID(g) == id,
 // case-insensitive hex compare).
 func Verify(g Genesis, id string) (bool, error) {

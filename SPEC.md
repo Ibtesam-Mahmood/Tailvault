@@ -451,7 +451,7 @@ rename) — never an in-place edit of an existing entry.
 | `seq` | int | monotonic per node, starting at `0` for the genesis entry. |
 | `op_id` | string | UUID, lowercase hex, no dashes (minted by `wal.NewOpID`; bootstrap derives a deterministic one — DG-29). Unique → idempotent retry/dedupe. Sample values are illustrative. |
 | `prev_hash` | string | 64-hex sha256 over the **canonical on-disk bytes of the previous entry**. The genesis entry (`seq = 0`) uses **64 zeros**. |
-| `op_type` | string | one of `ingest` \| `move` \| `delete` \| `sync_mode` \| `gc` \| `roster` \| `scan` \| `passwd`. (`passwd` = password-rotation op, task-46/DEV-46.6; `blob_refs = ["meta/auth/passwd"]` so concurrent rotations serialize via WAL-as-lock.) |
+| `op_type` | string | one of `ingest` \| `move` \| `delete` \| `sync_mode` \| `gc` \| `roster` \| `scan` \| `passwd` \| `restore`. (`passwd` = password-rotation op, task-46/DEV-46.6; `blob_refs = ["meta/auth/passwd"]`. `restore` = manual identity restoration, task-48; `blob_refs = [restored file id]`, args record the old/restored id — the audit trail of an identity resurrection.) |
 | `blob_refs` | []string | file **IDs** (§11) this op locks — the basis of WAL-as-lock (D12). |
 | `actor` | string | identity from `tailscale whois`, falling back to git `user.email` (§6 Q7). |
 | `created_at` | string | RFC3339 UTC `Z`. |
