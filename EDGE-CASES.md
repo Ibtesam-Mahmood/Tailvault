@@ -532,3 +532,85 @@
   blob is intact on the node. A failed or unverified put never removes the source
   (never-silent-success applied to the destructive flag).
 - **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-35 (lock schema v2)
+- **Edge case:** v1 locks on disk vs the v2 self-certifying schema (embedded
+  id+genesis). Auto-migrating a v1 lock would silently fabricate genesis records
+  the v1 lock never carried.
+- **Decision:** chose — NO v1-tolerance (D29): `lock.Parse` version-gates and
+  rejects any version != 2 (`ErrIncompatibleVersion` → exit 2); a federated entry
+  must self-certify (`genesis` hashes to `id` via `identity.Verify`) in `Validate`.
+  Recreate (re-track), never migrate. The version gate is on Parse (cheap, every
+  read incl. gc branch-lock); the self-cert `Validate` is a separate explicit call
+  the command boundary runs (status/heal), so leaf reads stay cheap.
+- **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-35 (lock v2 — genesis serialization)
+- **Edge case:** go-toml/v2 serialized the embedded `genesis` as a trailing
+  `[entry.genesis]` sub-table (breaking the §2 canonical field order id→genesis→
+  sha) for a value struct, and would ALWAYS emit it (even for non-federated
+  entries) defeating omitempty.
+- **Decision:** chose — `Genesis *identity.Genesis` (pointer) with
+  `toml:"genesis,inline,omitempty"`: `inline` keeps it on one line right after
+  `id`; the pointer makes omitempty actually drop it for non-federated (nil) rows.
+- **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-35 (heal — repoint contract)
+- **Edge case:** heal could be tempted to "fix" more than a stale location
+  (re-mint id, rewrite genesis, rebuild a torn catalog).
+- **Decision:** chose — heal is repo-side ONLY and LOCATION-only: it rewrites a
+  FoundElsewhere entry's `location` in the committed lock and NOTHING else (id/
+  genesis/sha are immutable identity). PartialView/Missing entries are left
+  untouched + reported (never guess under an incomplete view). It never mutates a
+  node or writes a WAL. Catalog-rebuild is a SEPARATE node-mutating command, NOT a
+  heal flag (see next entry) — keeps heal's contract clean.
+- **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-35 (catalog-rebuild-from-WAL — SG-6 / review-35)
+- **Edge case:** qa-review's review-35 gate: recovery from a MISSING or TORN
+  `meta/catalog.toml`. The catalog has always been "a projection of the WAL" but
+  there was no explicit, reachable rebuild surface. Tension: rebuild WRITES the
+  node, but heal's contract is repo-side-only — folding it into heal would muddy
+  both.
+- **Decision:** chose — a pure primitive `ingest.ProjectCatalog(base, recs, node)`
+  (shares the `applyOp` core with `ReplayOp`, replays only DONE ops in seq order,
+  timestamps from immutable `created_at` → byte-deterministic) PLUS a separate
+  gated command `tailvault vault rebuild-catalog <location>` (coder-a + me agreed:
+  NOT `heal --rebuild-catalog`). It is password-gated via `gateLocation`
+  (DEV-48.2/46.8 precedent), uses `backend.PutOverwrite` (SG-6), and appends NO WAL
+  op (the WAL is the source, not a sink). A broken WAL chain hard-fails it
+  (TV-FED-03, exit 6 — never rebuild from a tampered record). SPEC §9c + §8b
+  document it; verify (coder-a) defers to ProjectCatalog.
+- **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-35 (lock v2 — push populates id/genesis) [DG-35.1, DEFERRED]
+- **Edge case:** the task note asks `push` to embed id+genesis into v2 lock
+  entries "from the catalog when the blob's vault is federated" (D24a — every
+  clone an identity backup). But the catalog keys files by VAULT-relative logical
+  path while the lock keys by REPO-tree path; matching naively across the two
+  namespaces could embed the WRONG file's identity, and matching by content sha is
+  ambiguous (two files with identical bytes have DIFFERENT genesis/ids by design).
+- **Decision:** punted — left id/genesis EMPTY on push for now (explicitly legal
+  in v2; heal/pull-WARN skip empty-id entries, restore-identity `--lock` simply
+  finds nothing to restore). The lock-v2 SCHEMA fully supports embedded identity
+  (proven by the federated round-trip/merge/heal/pull tests); only the push-side
+  POPULATION is deferred, because doing it wrong silently corrupts identity — worse
+  than leaving it empty (the exact failure class this system exists to prevent).
+  The correct seam needs the repo↔vault path-mapping contract coordinated with the
+  push / `vault put` owner (coder-c). Flagged to consolidator + coder-c.
+- **Follow-up:** GH/Block-4 candidate — wire push id/genesis population via the
+  confirmed repo↔vault path map (or a sha+path composite key) with coder-c.
+
+- **Date / Task:** 2026-06-11 / task-35 (rebuild — federated-but-catalog-gone)
+- **Edge case:** the catalog is MISSING/TORN so its `[federation]` header is lost;
+  if all OTHER members are also offline, `loadRoster` fails — writing the rebuilt
+  catalog with no `[federation]` section would SILENTLY de-federate (orphan) the
+  node.
+- **Decision:** chose — never silently de-federate: when the header can't be
+  recovered from the (parseable) existing catalog AND no roster answers, the
+  command REFUSES with a TV-CFG error telling the user to bring a member online or
+  pass `--standalone` to deliberately rebuild a federation-less catalog. A
+  parseable existing catalog keeps its header verbatim (common "file-list-only
+  corruption" case); the roster is replicated, so any one surviving member
+  re-sources it. (Wording coordinated with coder-a for verify.)
+- **Follow-up:** none

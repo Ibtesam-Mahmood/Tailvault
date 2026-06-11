@@ -79,15 +79,31 @@ clone agrees, and written in a **canonical form** so the per-path union merge
 driver (Task 24) produces minimal, conflict-free diffs.
 
 Top-level keys:
-- `version = 1`
+- `version = 2` — **schema v2** (SPEC v2). Federation-aware: each entry may embed
+  the file `id` + full `genesis` record, making every clone an off-node identity
+  backup (D24a). Per **D29 there is no v1-tolerance machinery**: no real v1
+  vaults exist, so a reader requires `version = 2` and rejects `version = 1`
+  (or any other) with the standard incompatibility error (exit 2) — old test
+  vaults are **recreated, not migrated**.
 - `generated_by = "tailvault <ver>"` (e.g. `"tailvault 0.1.0"`).
 
 Each entry is a `[[entry]]` table. **Canonical ordering rules:**
 - Entries are sorted by `path`, **byte-wise ascending**, stable across writes.
 - Field order **within** each entry is fixed:
-  `path`, `sha256`, `size`, `location`, `pushed_at`, `pusher`, `history`,
-  `preserve`, `deleted` (tombstones only), then `versions` (history-on entries
-  only).
+  `path`, `id`, `genesis`, `sha256`, `size`, `location`, `pushed_at`, `pusher`,
+  `history`, `preserve`, `deleted` (tombstones only), then `versions`
+  (history-on entries only).
+- `id` is the 64-hex genesis hash (§11) of a **federated** file; `genesis` is
+  that file's full §11 birth record as an **inline table** carried right after
+  `id`. Both are **omitted** for a non-federated vault entry (empty id) — such
+  entries are legal in v2 and are simply skipped by pull-WARN / `heal`.
+- **Self-certification:** for every entry that carries an `id`, the embedded
+  `genesis` MUST hash to that `id` (`identity.Verify`). A lock with a torn
+  id↔genesis pairing is rejected as corrupt — a committed lock is an identity
+  backup, so it must be trustworthy on its face.
+- `id` and `genesis` are **immutable**: moves rewrite `location`/`path`, never
+  identity (that is `heal`'s contract). The union merge driver (Task 24) treats
+  them as ordinary per-entry fields.
 - `deleted = true` marks a **tombstone**: the working file is gone but its blob
   must survive — emitted only when the path was preserved or `auto_delete` was
   opted out. `push` retains tombstone entries instead of dropping them so the
@@ -107,6 +123,8 @@ Each entry is a `[[entry]]` table. **Canonical ordering rules:**
 | Field | Type | Notes |
 |---|---|---|
 | `path` | string | logical repo-relative path; the sort key |
+| `id` | string | **v2**; 64-hex genesis hash (§11); omitted for non-federated entries |
+| `genesis` | inline table | **v2**; full §11 birth record; omitted for non-federated entries; MUST hash to `id` |
 | `sha256` | string | hex; current content → `objects/<sha256>` |
 | `size` | int | bytes |
 | `location` | string | location name (resolved via `locations.toml`) |
@@ -120,11 +138,14 @@ Each entry is a `[[entry]]` table. **Canonical ordering rules:**
 ### Sample (verbatim from proposal.md)
 
 ```toml
-version = 1
+version = 2
 generated_by = "tailvault 0.1.0"
 
+# A FEDERATED entry — carries id + inline genesis (off-node identity backup).
 [[entry]]
 path      = "pnp/Root - Clockwork Expansion/board.pdf"
+id        = "9f2b1c4d8a01…"                 # 64-hex genesis hash (§11)
+genesis   = { content_sha256 = "…", original_path = "pnp/…/board.pdf", ingest_op_id = "…", origin_node = "home-pi" }
 sha256    = "9f2b1c…"                       # current content → objects/9f2b1c…
 size      = 41231873
 location  = "home-pi"
@@ -134,6 +155,17 @@ history   = false
 preserve  = false
 # history-on entries additionally carry, newest-first:
 # versions = ["9f2b1c…", "7c10aa…"]
+
+# A NON-FEDERATED entry (plain single-node vault) — id/genesis omitted; legal.
+[[entry]]
+path      = "docs/manual.pdf"
+sha256    = "7c10aa…"
+size      = 1048576
+location  = "home-pi"
+pushed_at = "2026-06-10T18:22:04Z"
+pusher    = "ibte@laptop"
+history   = false
+preserve  = false
 ```
 
 ---
@@ -423,6 +455,41 @@ A repo-root / **vault-root** file named `.tailvaultignore`, gitignore-style
 2); it is **overridden by an explicit `track`** (D22) — i.e. a path the user
 explicitly tracks is ingested even if `.tailvaultignore` would skip it. Absence
 of the file means "track everything" on bootstrap.
+
+### 9c. Catalog is a projection of the WAL (recovery)
+
+The catalog is a **materialized projection** of the node's WAL (§10) — the WAL is
+the durable recovery record, the catalog is the fast queryable view of it. Replaying
+every **done** WAL op in `seq` order, from an empty file list, reconstructs the
+catalog's `[[file]]` rows exactly (timestamps come from each op's immutable
+`created_at`, so a rebuild is byte-deterministic; intent/failed ops contribute
+nothing). This is the SG-6 disaster-recovery story for a **missing or torn**
+`meta/catalog.toml`.
+
+The pure primitive is `ingest.ProjectCatalog(base, recs, node)` (§8b): it takes a
+`base` carrying the header (`version`, `vault_name`, `node`, `[federation]`), the
+chain-verified `recs` from `wal.Log.Read`, and returns the rebuilt catalog
+Canonicalized for the caller to persist. It shares its op-application core
+(`applyOp`) with forward replay (`ingest.ReplayOp`), so a rebuild can never diverge
+from how ops were originally applied.
+
+The explicit, node-mutating, **password-gated** surface is
+`tailvault vault rebuild-catalog <location>` (§16 gated set rationale applies — it
+overwrites the catalog). It is **never automatic** (distinct from `pull`/`heal`,
+which are repo-side only and never touch a node). Rules:
+
+- A **broken WAL hash chain** hard-fails it (TV-FED-03, exit 6) — a tampered/torn
+  recovery record MUST NEVER silently drive a rebuild.
+- The header is **preserved** from the existing catalog when it is still parseable;
+  when the catalog is missing/torn the header is re-sourced from the location
+  record (`node`) and the **replicated** federation roster (§13) recovered from
+  surviving members.
+- If the catalog is missing/torn **and** no roster can be recovered from any
+  reachable member, the command **refuses** rather than silently writing a
+  federation-less catalog (which would orphan a federated node); `--standalone`
+  explicitly asserts the node is un-federated.
+- It appends **no** WAL op (the WAL is the source being replayed, not a sink) and
+  writes via `backend.PutOverwrite` (the §SG-6 atomic mutable-key primitive).
 
 ## 10. WAL entry schema + hash-chain rule (`meta/wal/`)
 
@@ -778,6 +845,7 @@ Consume these directly; do not introduce aliases.
 | `internal/wal` | type `Entry` (`Seq`, `OpID`, `PrevHash`, `OpType`, `BlobRefs`, `Actor`, `CreatedAt`, `Args`) — **no `State`/`UpdatedAt`** (immutable entry; DG-27.2); effective state is on `type Rec` (`Entry`, `State`) returned by `Read`/`Pending`; type `Log` (append/read/verify-chain/prune) |
 | `internal/identity` | type `Genesis` (`ContentSHA256`, `OriginalPath`, `IngestOpID`, `OriginNode`); `MintID(Genesis) string`; type `Receipt` |
 | `internal/fed` | type `Roster` (`FedID`, `Members []Member`); type `Member` (`Name`, `Node`, `JoinedAt`, `Status`); type `Snapshot` (client cache) |
+| `internal/ingest` | `ReplayOp(...)` (forward catch-up replay); `ProjectCatalog(base *catalog.Catalog, recs []wal.Rec, node string) (*catalog.Catalog, error)` — the pure catalog-from-WAL projection primitive (§9c), reachable via `tailvault vault rebuild-catalog <location>` |
 
 ## Cross-references
 

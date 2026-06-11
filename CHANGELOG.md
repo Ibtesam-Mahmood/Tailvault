@@ -6,6 +6,40 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.82 — 2026-06-11
+
+### Added
+- **Lock schema v2 — self-certifying federated entries (task-35).** `lock.Entry`
+  gains `id` + inline `genesis`; `SchemaVersion = 2` with a version gate on `Parse`
+  (`ErrIncompatibleVersion` → exit 2) and a separate `Validate()` that requires
+  federated entries to self-certify (genesis hashes to id). D29: NO v1 migration —
+  recreate, never migrate. v2 fields ride through the union merge driver.
+- **`tailvault heal [--dry-run]` (task-35).** Repo-side, LOCATION-only lock repair:
+  rewrites a FoundElsewhere entry's `location` and nothing else (id/genesis/sha are
+  immutable). PartialView → exit 6, Missing → exit 5, never mutates a node or WAL.
+- **Pull federation WARN path (task-35).** `pull` gains a `ResolveEntry` seam +
+  `Result.Warnings`: FoundElsewhere fetches from the answering member and WARNs
+  ("run `tailvault heal`"); PartialView → exit 6, Missing → exit 5; the fetched
+  blob's sha is still verified (a WARN never relaxes integrity). Non-federated repo
+  → seam nil → exact v1 single-backend behavior.
+- **Catalog-rebuild-from-WAL (task-35, review-35 / SG-6 gate).** Pure primitive
+  `ingest.ProjectCatalog(base, recs, node)` (shares `applyOp` with `ReplayOp`,
+  replays only DONE ops in seq order, byte-deterministic) plus a gated command
+  `tailvault vault rebuild-catalog <location>` (password-gated, `PutOverwrite`, no
+  WAL op). A broken WAL chain hard-fails with TV-FED-03 (exit 6); refuses to
+  silently de-federate when no roster answers (`--standalone` to override).
+
+### Fixed
+- Corrected the `internal/ops` doc comment (LOW 37.1): `ops list` reports a
+  chain-broken member and exits 0 (withhold), not exit 6 — exit 6 is the refused
+  retry path.
+
+### Deferred
+- **DG-35.1:** `push` does not yet populate id/genesis into v2 lock entries (the
+  catalog keys by vault-relative path, the lock by repo-tree path; a naive match
+  risks embedding the wrong identity). Left empty (legal); correct seam needs the
+  repo↔vault path-map coordinated with the push / `vault put` owner.
+
 ## v0.0.81 — 2026-06-11
 
 ### Added

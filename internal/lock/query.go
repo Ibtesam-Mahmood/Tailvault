@@ -10,6 +10,14 @@ func Parse(data []byte) (*Lock, error) {
 	if err := toml.Unmarshal(data, &l); err != nil {
 		return nil, err
 	}
+	// Version gate (D29): only v2 is understood; a v1 (or any other) lock is a
+	// hard incompatibility, never silently migrated. Self-certification of
+	// embedded genesis records is a separate Validate step the command boundary
+	// runs — Parse stays cheap so gc's branch-lock reads (which only need shas)
+	// don't pay for identity verification.
+	if l.Version != SchemaVersion {
+		return nil, ErrIncompatibleVersion
+	}
 	return &l, nil
 }
 

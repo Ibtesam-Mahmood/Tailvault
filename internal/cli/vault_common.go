@@ -78,6 +78,17 @@ func backendForRegistry(reg locations.Registry) fed.BackendFor {
 	}
 }
 
+// buildResolver assembles the federation resolution engine from a registry +
+// merged roster (the same wiring pull / vault stat / heal all use): a backend
+// querier over the registry and the tailscale/taildrive reachability probe.
+func buildResolver(reg locations.Registry, roster fed.Roster) *fed.Resolver {
+	return &fed.Resolver{
+		Roster: roster,
+		Q:      fed.NewBackendQuerier(backendForRegistry(reg)),
+		Probe:  memberProbe(reg),
+	}
+}
+
 // locationBackend resolves a location BY NAME (from locations.toml) to its
 // backend plus the Location record. Shared by every command that acts on a named
 // location directly — vault get/put/mv/rm/passwd and track's vault-mode. An

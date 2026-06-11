@@ -7,9 +7,13 @@
 //
 // Listing tolerates partial reachability (unreachable members are reported, not
 // fatal — its scope is "whoever answers"); a chain-broken member's ops are
-// withheld (a tampered journal must never drive retries) while other members
-// still list. Per the §8 layering rule this package returns plain errors; the
-// command maps them to tserr (a broken chain → TV-FED-03, exit 6).
+// WITHHELD and surfaced as a trailing MemberStatus row (a tampered journal must
+// never drive retries) while other members still list. `ops list` therefore
+// reports the broken member and still exits 0 — the broken chain degrades, never
+// fails, the listing. A broken chain only becomes a hard failure when a RETRY is
+// attempted against that member: the retry is refused. Per the §8 layering rule
+// this package returns plain errors; the command maps a refused-retry chain break
+// to tserr (TV-FED-03, exit 6).
 package ops
 
 import (
