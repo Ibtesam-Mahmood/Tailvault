@@ -16,11 +16,12 @@ import (
 type ChangeKind int
 
 const (
-	Added   ChangeKind = iota // on disk, not in catalog → catch-up ingest
-	Edited                    // hash drift with mtime/size moved since last_scanned
-	Suspect                   // hash drift but mtime+size UNCHANGED → possible corruption; report only
-	Moved                     // same content hash: old path gone, new path present
-	Deleted                   // in catalog, not on disk
+	Added    ChangeKind = iota // on disk, not in catalog → catch-up ingest
+	Edited                     // hash drift with mtime/size moved since last_scanned
+	Suspect                    // hash drift but mtime+size UNCHANGED → possible corruption; report only
+	Moved                      // same content hash: old path gone, new path present
+	Deleted                    // in catalog, not on disk
+	Verified                   // hashed and matched: content unchanged → freshness-only last_scanned bump (F5)
 )
 
 func (k ChangeKind) String() string {
@@ -35,6 +36,8 @@ func (k ChangeKind) String() string {
 		return "moved"
 	case Deleted:
 		return "deleted"
+	case Verified:
+		return "verified"
 	default:
 		return "unknown"
 	}
@@ -96,7 +99,10 @@ func Diff(ctx context.Context, root string, ig *Ignore, cat *catalog.Catalog, pa
 			return nil, err
 		}
 		if sum == f.SHA256 {
-			continue // content unchanged (perhaps only mtime touched)
+			// Content unchanged but we DID hash it (paranoid, or an mtime touch):
+			// this entry was reconciled, so bump its freshness watermark (F5).
+			changes = append(changes, Change{Kind: Verified, Path: f.Path, File: f, SHA256: sum, Size: c.Size})
+			continue
 		}
 		kind := Suspect
 		if moved {
@@ -191,6 +197,15 @@ func Apply(ctx context.Context, log *wal.Log, cat *catalog.Catalog, catPath, nod
 	for _, ch := range changes {
 		if ch.Kind == Suspect {
 			skipped = append(skipped, ch)
+			continue
+		}
+		if ch.Kind == Verified {
+			// Freshness-only: content matched, so just advance last_scanned. No WAL
+			// op (nothing changed); the catalog is bookkeeping for the watermark (F5).
+			f := ch.File
+			f.LastScanned = now().UTC()
+			cat.Upsert(f)
+			applied = append(applied, ch)
 			continue
 		}
 		entry, mutate, ok := buildScanEntry(cat, node, actor, ch, now)

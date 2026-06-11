@@ -67,6 +67,27 @@
   check. Documented in Diff.
 - **Follow-up:** Block 7 candidate (mtime-equality boundary policy).
 
+- **Date / Task:** 2026-06-11 / task-34 (vault scan) [fix F5: last_scanned watermark]
+- **Edge case:** a clean entry that scan HASHED (under --paranoid, or after an
+  mtime touch with unchanged content) was skipped without bumping `last_scanned`,
+  so the freshness watermark never advanced → redundant re-hashing + weaker Suspect
+  detection over time.
+- **Decision:** chose — Diff now emits a `Verified` change for hashed-and-matched
+  entries; Apply advances `last_scanned` for them (catalog-only freshness bump, NO
+  WAL op and `updated_at` untouched — nothing actually changed). Bumped on EVERY
+  reconciled entry per the task requirement. New test TestScanParanoidBumpsLastScanned.
+- **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-34 (vault scan)
+- **Edge case:** a crashed scan leaves orphaned pending intents — scan's catch-up
+  ops use random op ids (unlike bootstrap's deterministic ones), so they are not
+  resume-deduped and a pending intent can block a re-scan of that blob until
+  `ops retry`/clear.
+- **Decision:** punted — acceptable: the pending intent is surfaced by `ops`
+  (task-37) and retryable; per-blob lock correctly refuses the conflicting re-scan
+  rather than corrupting state. (qa-review note.)
+- **Follow-up:** Block 7 candidate (scan op-id determinism / auto-recovery).
+
 - **Date / Task:** 2026-06-11 / task-34 (vault scan)
 - **Edge case:** ambiguous moves — several files share one content hash, so a
   deleted+added pair cannot be uniquely matched.

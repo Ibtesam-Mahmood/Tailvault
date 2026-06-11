@@ -6,6 +6,20 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.57 — 2026-06-11
+
+Phase 3 (task-29/34 review fixes) — WS-A ship-gate fix pass closing three qa-review
+findings:
+
+- **F2/SG-2:** SPEC §8b API table — `wal.Entry` row no longer lists `State`/`UpdatedAt`
+  (DG-27.2: immutable entry; effective state via `wal.Rec`).
+- **F3:** SPEC §10 — clarified the chain verifies over RAW on-disk bytes (explicit-encode).
+- **F5/SG-5:** `vault scan` now bumps `last_scanned` on every reconciled entry incl.
+  clean/`--paranoid`-verified (new `Verified` change kind, freshness-only, no WAL op) + test.
+
+(SG-3/F4 — wal.ErrChainBroken→TV-FED-03 exit-6 boundary wiring — follows now that
+task-32's tserr is on the branch.)
+
 ## v0.0.56 — 2026-06-11
 
 Phase 3 (task-34) — `vault scan`: reconcile the working tree against the catalog.

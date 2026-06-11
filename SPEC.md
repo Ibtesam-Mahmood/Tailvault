@@ -467,6 +467,9 @@ Each entry's hash is `sha256` over its **entire canonical serialized bytes**
 (excluding nothing). `prev_hash` links entry *n* to entry *n−1*. Any reader
 replaying the chain MUST verify **every** link (and seq contiguity) and **fail**
 on the first break (tamper-evident, D17) → **`TV-FED-03`**, exit bucket 6.
+Verification hashes the **raw on-disk bytes** of each entry file (not a
+re-encode), so any byte-level tampering is detected and the chain survives an
+encoder change — do NOT re-encode-on-verify.
 
 The canonical byte form is `wal.Encode`, produced by **explicit byte
 construction** — NOT a TOML marshaler. This is load-bearing: these bytes feed the
@@ -757,7 +760,7 @@ Consume these directly; do not introduce aliases.
 | Package | Reserved symbols |
 |---|---|
 | `internal/catalog` | type `Catalog` (fields incl. `Version`, `VaultName`, `Node`, `Federation`, `Files []File`); type `File` (`ID`, `Genesis`, `SHA256`, `Path`, `SyncMode`, `Size`, `CreatedAt`/`UpdatedAt`/`LastScanned time.Time`) |
-| `internal/wal` | type `Entry` (`Seq`, `OpID`, `PrevHash`, `OpType`, `Args`, `BlobRefs`, `State`, `Actor`, `CreatedAt`/`UpdatedAt`); type `Log` (append/read/verify-chain/prune) |
+| `internal/wal` | type `Entry` (`Seq`, `OpID`, `PrevHash`, `OpType`, `BlobRefs`, `Actor`, `CreatedAt`, `Args`) — **no `State`/`UpdatedAt`** (immutable entry; DG-27.2); effective state is on `type Rec` (`Entry`, `State`) returned by `Read`/`Pending`; type `Log` (append/read/verify-chain/prune) |
 | `internal/identity` | type `Genesis` (`ContentSHA256`, `OriginalPath`, `IngestOpID`, `OriginNode`); `MintID(Genesis) string`; type `Receipt` |
 | `internal/fed` | type `Roster` (`FedID`, `Members []Member`); type `Member` (`Name`, `Node`, `JoinedAt`, `Status`); type `Snapshot` (client cache) |
 

@@ -101,10 +101,12 @@ func printChanges(out io.Writer, changes []ingest.Change) {
 	for _, c := range changes {
 		counts[c.Kind]++
 	}
-	fmt.Fprintf(out, "scan: %d added, %d edited, %d moved, %d deleted, %d suspect\n",
-		counts[ingest.Added], counts[ingest.Edited], counts[ingest.Moved], counts[ingest.Deleted], counts[ingest.Suspect])
+	fmt.Fprintf(out, "scan: %d added, %d edited, %d moved, %d deleted, %d suspect, %d verified\n",
+		counts[ingest.Added], counts[ingest.Edited], counts[ingest.Moved], counts[ingest.Deleted], counts[ingest.Suspect], counts[ingest.Verified])
 	for _, c := range changes {
 		switch c.Kind {
+		case ingest.Verified:
+			// freshness-only bump; counted above, not listed per-file (can be many).
 		case ingest.Moved:
 			fmt.Fprintf(out, "  moved   %s -> %s\n", c.OldPath, c.Path)
 		default:

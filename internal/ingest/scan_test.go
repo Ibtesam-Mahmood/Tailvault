@@ -175,17 +175,59 @@ func TestScanSuspectParanoid(t *testing.T) {
 		t.Fatalf("suspect path = %q", s.Path)
 	}
 
-	applied, skipped, err := Apply(context.Background(), scanLog(root), cat, filepath.Join(root, "meta", "catalog.toml"),
+	// The suspect must be the ONLY skipped change (clean files become Verified and
+	// are applied as freshness-only bumps); a.txt's sha is never mutated.
+	_, skipped, err := Apply(context.Background(), scanLog(root), cat, filepath.Join(root, "meta", "catalog.toml"),
 		testNode, "tester", ch, func() time.Time { return scanT0 })
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(applied) != 0 || len(skipped) != 1 {
-		t.Fatalf("suspect must be skipped, not applied: applied=%d skipped=%d", len(applied), len(skipped))
+	if len(skipped) != 1 || skipped[0].Kind != Suspect || skipped[0].Path != "a.txt" {
+		t.Fatalf("suspect must be the only skipped change: %+v", skipped)
 	}
 	got, _ := loadCat(t, root).Find("a.txt")
 	if got.SHA256 != before.SHA256 {
 		t.Error("suspect must not mutate the catalog sha")
+	}
+}
+
+// F5: a clean --paranoid scan reconciles every entry, advancing last_scanned even
+// for unchanged files (so the freshness watermark moves and re-hashing stops).
+func TestScanParanoidBumpsLastScanned(t *testing.T) {
+	root := setupScan(t)
+	cat := loadCat(t, root)
+	for _, f := range cat.Files {
+		if !f.LastScanned.Equal(scanT0) {
+			t.Fatalf("precondition: %s last_scanned %v != T0", f.Path, f.LastScanned)
+		}
+	}
+
+	ch := diff(t, root, cat, true) // paranoid: hashes all, all match → all Verified
+	n := 0
+	for _, c := range ch {
+		if c.Kind != Verified {
+			t.Fatalf("clean paranoid scan should only yield Verified, got %s %s", c.Kind, c.Path)
+		}
+		n++
+	}
+	if n != 3 {
+		t.Fatalf("want 3 Verified, got %d", n)
+	}
+
+	bump := scanT0.Add(24 * time.Hour)
+	applied, skipped, err := Apply(context.Background(), scanLog(root), cat, filepath.Join(root, "meta", "catalog.toml"),
+		testNode, "tester", ch, func() time.Time { return bump })
+	if err != nil || len(applied) != 3 || len(skipped) != 0 {
+		t.Fatalf("apply verified: applied=%d skipped=%d err=%v", len(applied), len(skipped), err)
+	}
+	for _, f := range loadCat(t, root).Files {
+		if !f.LastScanned.Equal(bump) {
+			t.Errorf("%s last_scanned not bumped: %v", f.Path, f.LastScanned)
+		}
+		// content fields untouched.
+		if f.UpdatedAt.Equal(bump) {
+			t.Errorf("%s updated_at should NOT move on a freshness-only bump", f.Path)
+		}
 	}
 }
 
