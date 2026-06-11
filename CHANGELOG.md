@@ -6,6 +6,19 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.44 — 2026-06-11
+
+Phase 3–4 planning artifacts — commits the frozen Part II federation plan ahead of
+implementation. Lands the Blocks 3–4 task corpus (tasks 27–50 build work plus the
+51–59 hardening/dogfooding planning docs), the Block 3 decision log, and refreshes
+the phase→block map. No source changes; this is the docs baseline the
+`block-3-4/integration` branch is cut from.
+
+- `BRAINSTORM-block-3.md` — federation decision log D1–D31 + holes H1–H12.
+- `tasks/task-27`…`task-59` — standalone, normative task files for Blocks 3–7.
+- `proposal.md`, `tasks/README.md`, `tasks/task-26-dogfood-root-pnp.md` — Part II
+  refresh and 59-task/7-block map.
+
 ## v0.0.43 — 2026-06-10
 
 Phase 3 — integration: assert the preserve-deletion fix end-to-end (closes the wave).

@@ -1,16 +1,26 @@
-# Proposal: tailvault — a Tailscale-native large-file store for git
+# Proposal: tailvault — a Tailscale-native distributed storage system with first-class git support
 
-**Status:** Draft · **Date:** 2026-06-10 · **Author:** AI Assistant
-**Type:** Feature Addition (greenfield CLI tool) · **Scope:** v1 design blueprint
+**Status:** Part I (v1, Blocks 1–2) **SHIPPED** · Part II (Federation, Blocks 3–7) Draft
+**Date:** 2026-06-11 · **Author:** AI Assistant
+**Type:** Feature Addition · **Scope:** v1 blueprint (implemented) + v2 federation blueprint
 
-> **Planning only.** This proposal is the implementation blueprint. No code is
-> written yet. It builds on [`DESIGN.md`](./DESIGN.md) and turns it into concrete
-> schemas, algorithms, a phased plan, decisions you need to make, and an effort
-> estimate.
+> **Part I** below is the original v1 blueprint, now implemented (PR #1, merged
+> at v0.0.43; normative contract frozen in [`SPEC.md`](./SPEC.md)). **Part II**
+> (Federation & remote interaction) is the new design, distilled from the
+> brainstorm log (`BRAINSTORM-block-3.md`, decisions D1–D31). Task files for
+> Part II are not yet cut.
 
 ## Executive Summary
 
-`tailvault` is a single-binary CLI that keeps large binary files **out of git
+**Identity (v2):** tailvault is a **distributed Dropbox-style storage system
+with first-class native git support, built on Tailscale plus custom logic,
+protocols, processes, and security.** The v1 mission — a clean Git LFS
+alternative — is now one native feature of that larger system: storage
+locations across the tailnet federate into a single logical vault layer that
+can be browsed, managed, and reorganized from any node, with no running server
+anywhere.
+
+`tailvault` v1 is a single-binary CLI that keeps large binary files **out of git
 history** while staying in lockstep with `git push`/`git pull`. Bytes live in a
 **content-addressed folder on a Tailscale node**; the repo carries only tiny
 pointer + lock files. It is a clean, purpose-built alternative to Git LFS whose
@@ -346,6 +356,170 @@ isn't reachable. Errors are structured, not raw stack traces or SSH noise:
 
 ---
 
+# Part II — Federation & remote interaction (v2 — Blocks 3–7, Draft)
+
+> Distilled from `BRAINSTORM-block-3.md` (decisions D1–D31, holes H1–H12).
+> Everything here is **serverless**: no daemon anywhere, ever. Nodes are
+> passive storage + state; all execution is client-driven over SSH.
+
+## Vision
+
+One **logical federated layer** connects all storage locations on the tailnet:
+
+1. **Federation** — fully distributed, async resolution. There is no global
+   "online/offline": state is whatever the members you ping report. Partial
+   views are first-class.
+2. **Self-describing vaults** — each location carries a catalog describing
+   every stored file and its sync mode (`git | manual`, extensible). Vaults
+   natively hold **non-git files**.
+3. **Remote interaction from any node** — browse, read metadata, download,
+   ingest, move, and manage sync modes via the CLI, no repo checkout needed.
+4. **Moves** — files move between/within locations; the next git sync resolves
+   the new home through the logical layer (pull warns; `heal` rewrites the
+   lock).
+
+## Core designs
+
+### Per-node WAL (write-ahead log) — the concurrency + partial-failure model
+
+- Every storage node keeps its own hash-chained WAL (each entry embeds the
+  hash of the previous entry → tamper-evident, no consensus needed).
+- Every mutating op: **dry-run preflight** (fail early) → append **intent**
+  record (op id, type, args, blob refs) → receipt → execute → confirm → mark
+  done. Ops are idempotent with unique ids (retry-safe, dedupe).
+- **WAL-as-lock:** a blob has exactly one home (single-home invariant), so
+  every op on it must touch its home node — appending the intent IS acquiring
+  the per-blob lock. First appender wins; later ops queue or fail
+  "op in flight". No coordinator, no root server, no delay windows.
+- Pending/failed ops surface on any later command that pings the node;
+  `tailvault ops` lists, `ops retry` re-runs; unresolvable ops are flagged
+  for physical fixing. Blocking is **per-blob ordering** only (no general
+  dependency DAG). Done-entries are pruned by a journal GC.
+
+### Catalog (vault-side state) + atomicity standards
+
+- Each location's catalog: object set, per-file {id, genesis record, current
+  sha256, logical path, sync_mode, timestamps, last_scanned}, a
+  `[federation]` roster section, and a schema version field.
+- Atomicity: temp-file + fsync + atomic rename for every blob/catalog/WAL
+  write; write-ahead ordering (WAL intent → blob bytes → catalog → WAL done);
+  crash anywhere = detectable + repairable by `verify`/`heal`. 3-way verify:
+  lock ↔ catalog ↔ disk. No distributed transactions — saga + WAL +
+  reconciliation is the whole model.
+
+### File identity — genesis-hash IDs (dual addressing)
+
+- Every federated file has (a) a stable **file ID** and (b) a **logical path**
+  (`<location>/<relative-path>`) for display/navigation. Moves change the
+  path, never the ID; locks/links reference the ID.
+- `id = sha256(genesis record)` where the genesis record is the ingest WAL
+  entry `{original content sha256, original relative path, ingest op id,
+  origin node}`. Unique (op id + path salt), location-independent,
+  deterministic — regeneratable by anyone holding the genesis record.
+  Short 12-hex display form.
+- The ID is **not** the content hash: manual files are editable in place, so
+  content sha drifts until a scan re-hashes (verify distinguishes "corrupt"
+  from "edited since last scan" via mtime/size + `last_scanned`).
+- **Identity recovery** (self-certifying: a record hashing to the claimed id
+  proves itself): lock entries embed the full genesis record (every repo
+  clone = off-node identity backup); every `vault get` writes a pull receipt
+  (`~/.tailvault/receipts/<id>.toml`); manual `vault restore-identity`
+  verifies sha256(record)==id and re-seeds a rebuilt catalog. Never implicit.
+  Residual risk (never-referenced file on a destroyed node) accepted —
+  closed later by redundancy (GH issue).
+
+### Resolution & reachability
+
+- **Fan-out**: ping members, each reports what it has; the source's
+  `moved_to` WAL/catalog record doubles as a forwarding pointer (finds files
+  whose new home is currently offline).
+- **Per-operation reachability scoping** — no global online requirement.
+  Each command needs only the members its scope touches: get/mv/rm → the
+  home node; ls/search → all members; **gc → all members** (its scope is all
+  references). Roster updates (join/leave) apply to reachable members and
+  queue pending WAL ops for the rest.
+- **Client state caches** (advisory, never authoritative): every reading
+  client persists current + previous federation snapshots
+  (`~/.tailvault/cache/fed-<id>/`) — used to distinguish "was here, now
+  offline" from "never existed", to show last-known state, and to detect
+  roster changes. Live pings always win.
+- **Error semantics** (SPEC v2, new `TV-FED-*` codes, proposed exit 6):
+  found at recorded home → success; found at a different member → success +
+  WARN (run `heal`); not found among reachable with ≥1 member unreachable →
+  TV-FED partial-view hard-fail ("cannot prove absence"); not found with all
+  reachable and no pending move → TV-OBJ missing. Every remote view carries
+  reachability metadata.
+
+### Membership: join / leave / evict
+
+- Roster lives in each member's catalog `[federation]` section, mirrored in
+  clients' `locations.toml` + caches. `fed join` = client-driven WAL op on
+  every member (pending for unreachable ones).
+- **Leave = clean detach** (not blocked-until-empty): the leaver's files drop
+  out of the federated tree; every repo/sync referencing them gets a WARNING
+  ("repush to a new location or resync from a moved copy") via state change
+  + committed lock history. The leaver's disk is untouched.
+- `fed evict <member>` (manual, password-gated) declares a dead node departed
+  — the only way to distinguish "crashed forever" from "gone".
+
+### Ingestion — three paths for non-git files (default `sync_mode = manual`)
+
+1. **Manual + track**: drop a file into the storage folder by hand, then run
+   `track` (locally or remotely) → catch-up WAL entries. On-demand
+   `vault scan` reconciles disk ↔ catalog (absorbs manual moves/deletes).
+   A resident OS-hook watcher is explicitly OUT (first daemon-shaped thing) —
+   optional later add-on (GH issue).
+2. **Creation (bootstrap)**: first broadcast of a storage root tracks ALL
+   files/subfolders by default; opt-out via `.tailvaultignore`
+   (gitignore-style globs, overridden by explicit `track`) and an init-time
+   deselect flag. Resumable via WAL (huge roots).
+3. **Push (remote ingest)**: `vault put` sends a local file to a chosen path
+   in an active location; on name conflict prompt copy/rename/stop (or
+   `--on-conflict=` for scripts). After push the **vault copy is the
+   original**; the local source is a deletable clone.
+
+### Security & transport
+
+- **Reuse built primitives only** — never roll our own crypto/transport.
+  Tailscale WireGuard + SSH provide encryption, identity (whois), key
+  exchange. Move transport = **node-to-node SSH/rsync over the tailnet**
+  (Taildrop rejected: inbox/staging delivery, not path-to-path).
+- Mutating remote ops (mv, rm, sync-mode change, remote gc, evict) require a
+  **per-node password** (may be identical across nodes), stored as an
+  **argon2id hash** on the node (no recovery — reset requires SSH/physical
+  access). Reads ride tailnet ACL + SSH alone.
+- WAL hash-chaining gives tamper-evident history; Block 5 is a dedicated
+  security analysis (threat model, perms, chain-verify tooling, whois
+  assumptions, SSH hardening, privacy audit of catalogs/receipts,
+  govulncheck CI, parser fuzzing).
+
+### GC under federation
+
+- Only `sync_mode = git` objects are ever GC candidates — manual files are
+  deleted solely by explicit user action.
+- gc skips any blob with a pending WAL intent, and hard-fails unless ALL
+  members answered (deletes never tolerate partial views).
+
+### CLI surface (v2 additions)
+
+```
+tailvault vault ls|stat|get|put|mv|rm|scan|passwd|restore-identity
+tailvault fed init|join|leave|evict|status
+tailvault ops [list]|retry
+tailvault heal
+tailvault track            # gains manual-ingest registration mode
+```
+
+### Edge-case discipline
+
+`EDGE-CASES.md` is a running log: every dev/QA appends edge cases discovered
+while building Blocks 3–5 (what was chosen, punted, or worked). Block 6's
+design (task 56) consumes that log — it is deliberately designed only after
+the layers beneath exist. Block 7's dogfood appends late entries for a future
+iteration.
+
+---
+
 ## Implementation Plan
 
 Estimates are in **ideal engineering days** for a solo developer comfortable with
@@ -395,6 +569,86 @@ MVP-vs-full split.
 
 #### Phase 9 — Dogfood on root-pnp [1 d]
 - [ ] Migrate `root-pnp`'s blobs into a real location; verify lean clone + push.
+      *(Moved into Block 6 — runs after federation, with grown scope.)*
+
+### Part II task breakdown (Blocks 3–7 — preliminary; task files cut later)
+
+> Phases 0–8 above = Blocks 1–2, **shipped**. The following blocks are new.
+> No migration path is needed: no real v1 vaults exist (D29).
+
+#### Block 3 — Vault catalog + federation core
+- [ ] 3.1 **SPEC v2 freeze**: catalog schema, WAL entry + hash-chain, genesis
+      record / file-ID, pull receipts, `.tailvaultignore`, `[federation]`
+      roster, client cache format, `TV-FED-*` codes + exit 6, password hash
+      file. (Everything else cites this.)
+- [ ] 3.2 `internal/catalog` — parse/write/atomic-update; schema version.
+- [ ] 3.3 `internal/wal` — append/read, hash-chain verify, op ids, intent
+      lifecycle, per-blob blocking, pruning.
+- [ ] 3.4 `internal/identity` — genesis records, ID mint/recompute/verify,
+      receipts.
+- [ ] 3.5 `internal/fed` — roster parse/merge, client state caches,
+      reachability accounting.
+- [ ] 3.6 Resolution engine — fan-out, `moved_to` forwarding, partial-view
+      semantics, TV-FED errors.
+- [ ] 3.7 `vault init` (bootstrap ingestion): track-all default,
+      `.tailvaultignore`, deselect flag, WAL-resumable.
+- [ ] 3.8 `vault scan` — disk↔catalog reconcile, catch-up WAL, manual-file
+      freshness.
+- [ ] 3.9 Lock schema v2 (embed id+genesis), pull WARN, `heal`.
+- [ ] 3.10 gc federation-awareness: pending-intent skip, git-only scoping,
+      all-members gate.
+- [ ] 3.11 `ops` — list pending/failed, retry, dependency display.
+- [ ] 3.12 3-way verify (lock↔catalog↔disk) + edited-vs-corrupt logic.
+- [ ] 3.13 Multi-node integration harness (N stub backends, down-member
+      simulation) + Block 3 suite.
+
+#### Block 4 — Remote interaction CLI + ingestion + moves
+- [ ] 4.1 Remote sha256 short-circuit (existing deviation DEV-C1 —
+      prerequisite, lands first).
+- [ ] 4.2 `vault ls|stat` — logical tree, ID display, reachability metadata.
+- [ ] 4.3 `vault get` — download + pull receipt.
+- [ ] 4.4 `vault put` — remote ingest, `--on-conflict=copy|rename|stop`,
+      vault-copy-becomes-original.
+- [ ] 4.5 `vault mv` — intra- + cross-location (SSH/rsync, WAL-locked both
+      ends, `moved_to` record).
+- [ ] 4.6 `vault rm` + sync-mode management.
+- [ ] 4.7 `vault passwd` + argon2id auth enforcement on mutating remote ops.
+- [ ] 4.8 `fed init|join|leave|evict|status`.
+- [ ] 4.9 `vault restore-identity`.
+- [ ] 4.10 `track` manual-ingest mode.
+- [ ] 4.11 Block 4 integration suite (remote ops, auth, conflicts,
+      leave/evict).
+
+#### Block 5 — Security analysis & hardening (tasks 51–55)
+- [ ] 5.0 **STEP 0 (human-in-the-loop, first):** the maintainer manually runs
+      **Claude's security review** (`/security-review`) over the repo and
+      commits the artifacts under `docs/security/`; all Block 5 analysis runs
+      off them (every automated finding gets a disposition).
+- [ ] 5.1 Threat-model doc (task 51) → 5.2 adversarial auth review (52) →
+      5.3 WAL chain-verify tooling (53) → 5.4 parser fuzzing + govulncheck CI
+      (54) → 5.5 privacy audit + SSH hardening guide (55).
+
+#### Block 6 — Edge-case handling (task 56)
+- [ ] Designed only after Blocks 3–5, consuming the `EDGE-CASES.md` running
+      log; triage + cut its own implementation task set (numbered 60+); never
+      punt invariant-threatening entries.
+
+#### Block 7 — Dogfood (FINAL: tasks 57 → 58 → 59 → 26)
+Guided manual validation of the **entire system** — AI directs, maintainer
+runs — local-mock-first on the **dogfood rig** (generated test repo + files +
+localhost vaults; task 57 creates it), real hardware only at the end. Each
+task is mirrored 1:1 as its own GitHub issue.
+- [ ] 7.1 (task 57) Config-matrix manual tests on the rig (backends,
+      min_size/units, rules/overrides, history, retention, ignore, sync
+      modes, 2-member local federation, auth on/off).
+- [ ] 7.2 (task 58) Route walkthroughs: every CLI command/route, all four
+      groups (repo lifecycle, checkout-free vault ops, federation
+      membership, maintenance), exit codes spot-checked vs SPEC.
+- [ ] 7.3 (task 59) Failure & recovery drills: node down, interrupted ops,
+      corruption/tamper, auth/membership, git-side recovery — every failure
+      loud + every recovery verified clean.
+- [ ] 7.4 (task 26) The real use case: migrate `root-pnp` to 2+ real nodes;
+      federation walkthrough; live security checks; rollback runbook.
 
 ### Critical Path
 
@@ -434,6 +688,11 @@ gantt
 | Partial push leaves lock ahead of storage | H | L | Upload blobs **before** writing/committing lock; verify Stat post-Put |
 | `smudge` round-trips slow checkouts | M | M | Pointer carries size+location; fetch lazily / batch; cache locally |
 | Pi crypto throughput caps transfers | L | M | Documented expectation (few min/GB); not a failure mode |
+| *(v2)* Catalog drifts from disk/lock | H | M | Atomic write ordering + WAL; 3-way verify; `vault scan` reconcile |
+| *(v2)* Concurrent ops on one blob race | H | M | WAL-as-lock (intent append = lock); per-blob ordering; gc skips pending intents |
+| *(v2)* Partial view misread as "deleted" | H | M | TV-FED partial-view error class; client prev-state caches; `moved_to` forwarding |
+| *(v2)* Identity lost on node disk loss | M | L | Genesis records replicated into locks + pull receipts; manual `restore-identity`; redundancy later (GH) |
+| *(v2)* Password/auth weakens hard guarantees | M | M | argon2id hash only, no recovery; Block 5 dedicated security analysis |
 
 ---
 
@@ -453,10 +712,27 @@ gantt
 - **History/revert:** opt-in file keeps versions; `revert` restores an old sha.
 - **Integrity:** corrupt a stored blob → `pull`/`verify` detects mismatch.
 
+### Integration (v2 — multi-node harness: N stub backends, simulated down members)
+- **WAL:** intent→done lifecycle; crash between any two write steps is detected
+  and repaired by verify/heal; hash-chain tamper detection; retry idempotence.
+- **WAL-as-lock:** concurrent ops on one blob serialize; gc skips pending
+  intents; ops on different blobs proceed independently.
+- **Resolution:** moved file found via fan-out and via `moved_to` when the new
+  home is down; TV-FED partial-view vs TV-OBJ missing distinction.
+- **Membership:** join with a member down (pending op applied later); leave
+  detaches + warns referencing repos; evict of a dead member.
+- **Ingestion:** bootstrap honors `.tailvaultignore`; put conflict modes;
+  manual edit detected by scan (edited ≠ corrupt).
+- **Auth:** mutating remote ops rejected without password; reads unaffected.
+- **Identity:** restore-identity round-trip from a lock entry and a receipt.
+
 ### Manual / acceptance
 - [ ] End-to-end on a real Pi over Tailscale with a USB3 SSD.
-- [ ] Dogfood: `root-pnp` clone is lean; `git push` lands blobs and fails when
-      the Pi is offline.
+- [ ] Dogfood (Block 7, final): config-matrix + route walkthroughs + failure
+      drills on the local mock rig first (tasks 57–59), then the real use
+      case — `root-pnp` clone is lean; `git push` lands blobs and fails when
+      the Pi is offline; 2+ node federation walkthrough (init/join/put/mv/
+      leave) with guided per-command acceptance (task 26).
 
 ---
 
@@ -486,9 +762,11 @@ gantt
 
 ---
 
-## Open Questions — please resolve before Phase 1
+## Open Questions — RESOLVED (frozen in `SPEC.md`; recommendations adopted)
 
-> These are the decisions I need from you. My recommendation is in **bold**.
+> Historical (Part I). All eight were resolved before implementation; the
+> answers are normative in `SPEC.md`. Part II decisions (D1–D31) are logged in
+> `BRAINSTORM-block-3.md` and summarized in Part II above.
 
 - [ ] **Q1 — Language/runtime.** Go (single static binary, first-class Tailscale
   ecosystem, easy cross-compile to the Pi) vs a scripted tool (Python/TS).
@@ -517,7 +795,21 @@ gantt
 
 ---
 
-## Future (tracked, not v1)
+## Future (tracked, not in current blocks)
+
+GitHub issues to file alongside Part II:
+
+- **GH-1** — DEV-B1: taildrive mount-state detection (existing-but-unmounted
+  mountpoint not detected; accepted deviation from Blocks 1–2).
+- **GH-2** — DEV-C1: remote sha256 short-circuit for `verify`/remote reads
+  (accepted deviation; **promoted to Block 4 prerequisite**, task 4.1).
+- **GH-3** — Blob redundancy/mirroring (multi-home blobs) + redundant genesis
+  backups; closes the residual identity-loss risk. Deferred design.
+- **GH-4** — Optional resident watcher (OS hooks → WAL replay of manual file
+  ops: inotify/launchd/systemd-path; opt-in per node; explicit deviation from
+  serverless purity). Full design detail goes in the issue.
+
+Earlier future items remain tracked:
 
 - **Served HTTP object API** behind `tailscale serve` — random-access reads,
   identity auth, GC coordination, app frontend. Operational cost = an always-on

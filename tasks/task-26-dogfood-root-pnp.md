@@ -1,142 +1,142 @@
-# Task 26: Dogfood on `root-pnp` — real acceptance run
+# Task 26: Dogfood — `root-pnp` migration + federation acceptance on real nodes
 
-**Proposal:** [proposal.md](../proposal.md) · **Proposal Section:** Implementation Plan → Phase 9 ("Dogfood on root-pnp"); Testing Strategy → Manual / acceptance; Distribution & Rollout (phased adoption + rollback); Executive Summary (the 1.1 GB driver) · **Block:** 3 — Dogfood · **Type:** Acceptance · **Estimated Effort:** 1 ideal eng-day · **Dependencies:** Block 1 (full MVP: `init/track/status/push/pull/gc` over the SSH backend) + ideally Task 23 (`verify`, to confirm integrity post-migration) and Task 24 (lock merge driver, for multi-branch safety)
+**Proposal:** [proposal.md](../proposal.md) · **Proposal Section:** Implementation Plan → Phase 9 ("Dogfood on root-pnp", absorbed into Block 6) + Part II task breakdown → Block 6; Testing Strategy → Manual / acceptance · **Block:** 7 — Dogfood (final block; the real use case closes the plan) · **Type:** Acceptance · **Estimated Effort:** 2–3 ideal eng-days (plus hardware setup) · **Dependencies:** Blocks 1–6 complete and Tasks 57–59 (config matrix, route walkthroughs, failure drills — all green on the local mock rig first). Requires **2+ real tailnet nodes** (e.g. Pi + USB3 SSD, plus a second machine/disk).
 
 ## Summary
 
-The real-world acceptance run: migrate `root-pnp`'s ~1.1 GB of print-and-play
-PDFs/STLs/3MF/PPTX behind a branch onto a **real Tailscale node** (Raspberry Pi
-+ USB3 SSD), and prove the end-to-end guarantees the whole project exists for:
+The real-world acceptance run, grown from the original single-Pi scope to cover
+the **federation**. Two proofs in one task:
 
-- a **fresh clone is lean** (pointers only, not 1.1 GB);
-- `pull` restores the **real bytes**;
-- edit/delete cycles + `gc` actually **reclaim space** on the node;
-- `git push` **fails loudly when the Pi is offline** (the core hard-fail
-  guarantee).
+1. **The v1 promise** (unchanged): migrate `root-pnp`'s ~1.1 GB of
+   print-and-play PDFs/STLs/3MF/PPTX onto a real Tailscale node behind a
+   branch, and prove a fresh clone is lean, `pull` restores real bytes,
+   edit/delete + `gc` reclaim space, and `git push` **fails loudly when the
+   node is offline**.
+2. **The v2 promise**: with a second real node, walk the full federation
+   lifecycle — `fed init` → `fed join` → `vault put` → `vault ls/get` from a
+   third machine → `vault mv` between nodes → pull-resolves-the-move +
+   `heal` → `fed leave` detach warnings — plus live security checks
+   (password-gated mutations, WAL chain verify on real disks).
 
-This is mostly a **manual/acceptance checklist** (scripted where possible). The
-deliverable is a documented, repeatable migration runbook **and** its rollback —
-not new product code. Per the proposal: *"start read-mostly on `root-pnp` behind
-a branch; verify lean clone + reliable push/pull before flipping other
-projects,"* and rollback is *"removing the filter/hooks and restoring real files
-from the vault returns to plain git."*
+This is a **guided manual/acceptance checklist**: the maintainer runs the
+hardware steps with the runbook open; everything scriptable is scripted by
+dev/QA beforehand (the automated equivalents already live in Tasks 39/50 —
+this task re-runs the critical ones against real hardware). The deliverable
+is `docs/dogfood-root-pnp.md` (migration + federation runbook + rollback) and
+recorded acceptance evidence. **Append every surprise to `EDGE-CASES.md`** —
+Block 7 (Task 56) consumes that log.
 
 ## Context
 
 ### Related packages
 
-- No new packages. This task **uses** the shipped binary end-to-end.
-- `docs/dogfood-root-pnp.md` — **created here.** The migration runbook +
-  rollback, with the acceptance checklist and any helper scripts.
-- `scripts/` (optional) — **created here.** Small helper scripts to script the
-  scriptable steps (clone-size check, edit/delete loop, offline-push probe).
+- No new product code. This task **uses** the shipped binary end-to-end.
+- `docs/dogfood-root-pnp.md` — **created here.** Migration + federation
+  runbook, rollback, acceptance evidence.
+- `scripts/` (optional) — helper scripts: clone-size check, edit/delete loop,
+  offline-push probe, federation walkthrough probes.
+- `EDGE-CASES.md` — **appended here** (created in Task 27).
 
 ```mermaid
 graph TB
-    RP["root-pnp ~1.1 GB<br/>(PDF/STL/3MF/PPTX)"] -->|init + track + push| PI["Pi + USB3 SSD<br/>objects/&lt;sha&gt;"]
-    PI -->|fresh clone = pointers only| LEAN["lean clone"]
-    LEAN -->|pull| BYTES["real bytes restored"]
-    PI -.->|Pi offline| FAIL["git push FAILS loudly"]
+    RP["root-pnp ~1.1 GB"] -->|init + track + push| N1["Node A (Pi + SSD)"]
+    N1 -->|fed init| FED["federated layer"]
+    N2["Node B (2nd machine)"] -->|fed join| FED
+    FED -->|vault mv A→B| N2
+    LAP["any client"] -->|vault ls/get| FED
+    N1 -.->|offline| FAIL["push / get hard-fails<br/>TV-NODE / TV-FED"]
 ```
 
 ### Prerequisites
 
-- [ ] A real Pi (or equivalent) on the tailnet with a **USB3 SSD** mounted (not
-      the boot SD), Tailscale up, SSH backend reachable.
-- [ ] The laptop is logged into the same tailnet (`tailscale status` healthy).
-- [ ] Block 1 binary installed; `verify` (Task 23) available if asserting
-      integrity.
-- [ ] Work **behind a branch** in `root-pnp` — never directly on its main line
-      until acceptance passes.
+- [ ] Two+ real nodes on the tailnet (Node A: Pi + USB3 SSD; Node B: any
+      machine with spare disk), Tailscale up, SSH reachable on both.
+- [ ] Blocks 1–5 binaries current; `go build ./...` from main.
+- [ ] Vault passwords set on both nodes (`vault passwd`, Task 46).
+- [ ] Work **behind a branch** in `root-pnp` until acceptance passes; keep a
+      full backup until the round-trip is verified byte-identical.
 
 ## Changes Required
 
-### docs/dogfood-root-pnp.md — migration runbook
+### docs/dogfood-root-pnp.md — runbook (migration + federation + rollback)
 
 - **File:** `docs/dogfood-root-pnp.md`
 - **Action:** create
-- **Purpose:** the exact, repeatable steps to migrate, verify, and roll back.
+- **Purpose:** exact, repeatable steps with commands + expected output.
 
-Migration steps (document each with the command + expected output):
+**Part A — v1 migration (as originally specced):**
 
-1. `tailvault location add home-pi --node <magicdns>` (or interactive `setup`) →
-   write `locations.toml`; confirm `tailvault location ls` shows it reachable.
-2. On a branch in `root-pnp`: `tailvault init` → writes `tailvault.toml`,
-   `.gitattributes`, installs hooks (and registers the lock merge driver if
-   Task 24 is in).
-3. `tailvault track '**/*.pdf' '**/*.stl' '**/*.3mf' '**/*.pptx'` → include rules
-   land in `tailvault.toml` (the exact globs from the proposal).
-4. `tailvault status` → shows the large files as local-only / to-be-pushed.
-5. `tailvault push` (or `git push` via the pre-push hook) → blobs land in
-   `objects/<sha>` on the Pi; lock updated with pusher stamp.
-6. `tailvault verify` → no corruption/missing (integrity baseline).
+1. `tailvault location add home-pi` → `location ls` shows reachable.
+2. On a branch: `tailvault init`; `track '**/*.pdf' '**/*.stl' '**/*.3mf'
+   '**/*.pptx'`; `status`; `push`; `verify` (now 3-way, Task 38).
+3. Acceptance: lean fresh clone (MB not GB, pointers only); `pull` restores
+   byte-identical files (`sha256sum` sample); edit/delete + `gc --dry-run`
+   then `gc` reclaims node disk, `preserve`d files untouched; with Node A
+   offline `git push` fails loudly (`TV-NODE-01`, non-zero exit, refs not
+   advanced).
 
-### Acceptance checklist (the proof)
+**Part B — federation walkthrough (new):**
 
-- [ ] **Lean clone:** `git clone` the repo fresh into a temp dir → the clone is
-      **MB, not ~1.1 GB**; tracked files are pointer text, not real bytes.
-      (Script: clone, `du -sh`, assert under a threshold.)
-- [ ] **Pull restores bytes:** in the fresh clone, `tailvault pull` (or checkout
-      via smudge) → the large files are byte-identical to the originals
-      (`sha256sum` compare a sample).
-- [ ] **Edit/delete cycles + GC reclaim space:** edit a PDF, push; delete an STL,
-      push; run `tailvault gc --dry-run` then `gc` → node `objects/` disk usage
-      **drops** by the expected amount; `preserve`d files are untouched.
-- [ ] **Offline hard-fail:** power off / disconnect the Pi → `git push` (and
-      `tailvault push`) **fail loudly** with `TV-NODE-01` and a non-zero exit;
-      refs are **not** advanced; no partial upload. (Script: probe with the Pi
-      down, assert non-zero exit + unchanged remote ref.)
+1. `fed init` on Node A's location → `fed status` shows roster of 1.
+2. `vault init` on a manual storage root on Node A (`.tailvaultignore`
+   honored; deselect flag exercised once).
+3. `fed join` Node B → `fed status` shows 2 members, both reachable.
+4. From a third client with **no repo checkout**: `vault ls` (logical tree +
+   IDs + reachability), `vault put` a file (conflict prompt exercised once,
+   `--on-conflict` once), `vault get` (receipt written to
+   `~/.tailvault/receipts/`).
+5. `vault mv` a file Node A → Node B (password prompted; WAL intents on both
+   ends). Then in a repo referencing it: `pull` WARNS about the move; `heal`
+   rewrites the lock; commit.
+6. Down-member drills: take Node B offline → `vault ls` shows last-seen from
+   cache + partial-view metadata; `vault get` of a B-homed file hard-fails
+   `TV-FED` (not `TV-OBJ`); `ops` shows any pending op; bring B back,
+   `ops retry` clears it.
+7. Security spot-checks: a mutating op without the password is **rejected**;
+   `wal verify` (Task 53) passes on both nodes' real chains.
+8. `fed leave` Node B → referencing repos warn ("repush or resync"); Node B's
+   disk untouched; `fed status` roster back to 1.
 
-### Rollback runbook (also in the doc)
-
-- [ ] Remove the git filter + hooks (`git config --unset` the clean/smudge
-      filter; delete the installed hook files) and drop the `.gitattributes`
-      entries.
-- [ ] Restore real files into the working tree from the vault (`tailvault pull`
-      to materialize, then commit the real bytes) so the repo is plain git again.
-- [ ] Confirm `git status` is clean and the files are real bytes, not pointers —
-      the repo behaves exactly as before tailvault, just heavier.
-- [ ] Note that this is non-destructive: pointers + lock were just files.
+**Part C — rollback** (unchanged from v1): remove filter + hooks, drop
+`.gitattributes` entries, `pull` to materialize real bytes, commit; repo is
+plain git again, `git status` clean. Non-destructive by construction.
 
 Key Considerations:
 
-- **Branch isolation:** all of this happens behind a branch; only flip
-  `root-pnp`'s main line after the checklist passes.
-- **Record real numbers:** clone size before/after, push time/GB on the Pi
-  (proposal expects "few min/GB" — Pi crypto throughput), `objects/` size before/
-  after GC. These numbers are the acceptance evidence.
-- **Don't lose data:** keep a full backup of `root-pnp` until the lean clone +
-  pull round-trip is verified byte-identical.
+- **Record real numbers:** clone size before/after, push min/GB on the Pi,
+  `objects/` size before/after gc, `vault mv` throughput node-to-node.
+  These numbers are the acceptance evidence — paste into the runbook.
+- **Guided, not faked:** hardware steps are run by the maintainer with the
+  runbook; never simulate them and report success.
+- **EDGE-CASES.md:** every wrinkle (clock skew, slow SSH, prompt UX, cache
+  staleness…) gets a dated entry.
 
 ## Implementation Checklist
 
-- [ ] Runbook documents every migration command + expected output.
-- [ ] Acceptance checklist run on a **real** Pi over Tailscale, results recorded.
-- [ ] Lean-clone, pull-restores-bytes, GC-reclaims, offline-hard-fail all pass.
-- [ ] Rollback runbook documented and dry-run verified.
-- [ ] Helper scripts (clone-size, edit/delete loop, offline probe) committed.
+- [ ] Runbook documents every command + expected output for Parts A–C.
+- [ ] Part A acceptance run on real hardware; all four v1 proofs pass.
+- [ ] Part B federation walkthrough run on 2 real nodes + third client; all
+      eight steps pass, including both down-member drills.
+- [ ] Security spot-checks pass (auth rejection, wal verify).
+- [ ] Rollback dry-run verified.
+- [ ] Evidence (numbers, command output) recorded in the runbook.
+- [ ] EDGE-CASES.md appended with everything observed.
 
 ## Testing Requirements
 
-This is an **acceptance** task; the "tests" are the manual checklist above,
-scripted where feasible:
+Acceptance task — the checklist above IS the test, scripted where feasible:
 
-- **Lean-clone script:** fresh `git clone` → `du -sh` → assert `< ~50 MB` (well
-  under the original 1.1 GB); assert a sampled tracked file is a pointer.
-- **Round-trip script:** `pull` in the fresh clone → `sha256sum` a sample set →
-  compare to originals; all match.
-- **GC script:** snapshot Pi `objects/` size → edit+delete+push → `gc` → snapshot
-  again → assert size dropped; assert a `preserve`d blob still present.
-- **Offline-push probe:** with the Pi unreachable, run `git push` → assert
-  non-zero exit, `TV-NODE-01` in stderr, remote ref unchanged.
-
-(Where a real Pi isn't available in CI, these scripts run manually and their
-output is pasted into the runbook as evidence; the automated equivalents live in
-Task 25's integration suite against a temp "node".)
+- **Lean-clone / round-trip / GC / offline-probe scripts** (as v1).
+- **Federation probes:** `fed status` JSON-parse assert (2 members → 1);
+  `vault get` receipt file exists + genesis hash check; mv → pull-warn →
+  heal → clean status loop; partial-view probe asserts `TV-FED` exit code
+  (6) vs `TV-OBJ` (5) with Node B down.
+- Automated equivalents already run in CI via Tasks 39/50; this task's value
+  is the **real hardware + real tailnet** run.
 
 ## Validation Checklist
 
-- [ ] `go build ./...` succeeds (binary used for the run is current).
+- [ ] `go build ./...` succeeds (binary used is current main).
 - [ ] `go test ./...` passes.
 - [ ] `go vet ./...` clean.
 - [ ] `gofmt -l .` reports nothing.
@@ -145,35 +145,35 @@ Task 25's integration suite against a temp "node".)
 
 ## Acceptance Criteria
 
-- A fresh clone of migrated `root-pnp` is **lean** (pointers only, orders of
-  magnitude smaller than 1.1 GB) and `pull` restores byte-identical files.
-- Edit/delete cycles followed by `gc` measurably reclaim space on the Pi;
-  `preserve`d files survive.
-- With the Pi offline, `git push` **fails loudly** (`TV-NODE-01`, non-zero exit)
-  and never advances refs.
-- The rollback runbook returns the repo to plain git with real files and a clean
-  `git status`.
+- All v1 proofs hold on real hardware (lean clone; byte-identical pull; gc
+  reclaim with `preserve` honored; loud offline hard-fail, refs unmoved).
+- Full federation lifecycle (init/join/put/ls/get/mv/heal/leave) succeeds on
+  2 real nodes from a checkout-free client, with password gating enforced.
+- Down-member behavior matches spec: cache-backed last-seen views, `TV-FED`
+  partial-view hard-fail, pending ops retried cleanly.
+- Rollback returns the repo to plain git.
+- Runbook + evidence committed; EDGE-CASES.md updated.
 
 ## Related Proposal Sections
 
-> **Phase 9 — Dogfood on root-pnp.** Migrate `root-pnp`'s blobs into a real
-> location; verify lean clone + push.
+> **Block 6 — Dogfood (grown scope; absorbs Phase 9).** 2+ real nodes; migrate
+> `root-pnp`; federation walkthrough (init/join/put/mv/leave); live security
+> checks; per-command guided acceptance; automated demo-project tests by dev/QA.
 
-> **Testing Strategy → Manual / acceptance.** End-to-end on a real Pi over
-> Tailscale with a USB3 SSD. Dogfood: `root-pnp` clone is lean; `git push` lands
-> blobs and fails when the Pi is offline.
+> **Part II → Resolution & reachability.** …not found among reachable with ≥1
+> member unreachable → TV-FED partial-view hard-fail ("cannot prove absence")…
 
-> **Distribution & Rollout — Phased adoption / Rollback.** Start read-mostly on
-> `root-pnp` behind a branch … removing the filter/hooks and restoring real files
-> from the vault returns to plain git.
+> **Distribution & Rollout — Rollback.** Removing the filter/hooks and
+> restoring real files from the vault returns to plain git.
 
 ## Notes & Considerations
 
-- **Gotcha:** verify the lean-clone + pull round-trip is byte-identical **before**
-  you trust the vault as the only copy — keep a backup until then.
-- **Gotcha:** Pi crypto throughput caps transfer speed; record the few-min/GB
-  expectation so a "slow" push isn't mistaken for a failure.
-- **For Next Task:** none — this closes the v1 plan. Success here is the signal to
-  flip other projects off git-resident blobs.
-- **Prev:** [task-25-tests-docs-ci](./task-25-tests-docs-ci.md) · **Next:** —
-  (end of plan)
+- **Gotcha:** verify the lean-clone + pull round-trip byte-identical **before**
+  trusting the vault as the only copy.
+- **Gotcha:** Pi crypto throughput caps speed (few min/GB) — slow ≠ failed.
+- **Gotcha:** the down-member drills mutate real WALs; run `ops` + `wal verify`
+  after each drill so a stuck intent isn't carried into the next step.
+- **For Next Task:** none — this is the final task of the plan. Late
+  EDGE-CASES.md entries from this run feed a future edge-case iteration.
+- **Prev:** [task-59-dogfood-failure-recovery-drills](./task-59-dogfood-failure-recovery-drills.md) ·
+  **Next:** — (end of plan)
