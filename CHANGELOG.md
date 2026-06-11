@@ -6,6 +6,17 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.58 — 2026-06-11
+
+Phase 4 (task-39 part — fed.BackendQuerier, pulled forward) — the concrete
+`fed.Querier` reading catalog + WAL pending-move over a backend. Federation glue
+pulled ahead of the task-39 harness to unblock the Block-4 CLI read chain (task #14
+stays open for the harness proper).
+
+- `internal/fed/backend_querier.go`: implements the task-32 `fed.Querier` seam
+  against real catalog + wal over a `backend.Backend`. Depends only on
+  catalog+wal+backend + the fed engine; `-race` clean (42 PASS subtests).
+
 ## v0.0.57 — 2026-06-11
 
 Phase 3 (task-29/34 review fixes) — WS-A ship-gate fix pass closing three qa-review

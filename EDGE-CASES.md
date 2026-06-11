@@ -288,3 +288,23 @@
   ctx deadline or a self-timing-out prober (documented on Probe).
 - **Follow-up:** Block 7 candidate — revisit whether a default per-member
   timeout should be baked in rather than left to the caller's ctx.
+
+- **Date / Task:** 2026-06-11 / task-39 part (fed.BackendQuerier, pulled forward)
+- **Edge case:** a roster member that answers a probe but has no catalog yet
+  (mid-bootstrap, or backend.ErrNotExist on meta/catalog.toml) — erroring would
+  fail a whole federation-wide resolution for one un-catalogued member.
+- **Decision:** chose — loadCatalog treats a missing catalog as "holds nothing"
+  (nil, no error). Reachability (not catalog presence) is what proves/disproves
+  absence; a reachable-but-empty member simply contributes no match.
+- **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-39 part (fed.BackendQuerier, pulled forward)
+- **Edge case:** distinguishing a cross-member move (forwarding pointer) from a
+  local rename when reading move ops out of a member's WAL.
+- **Decision:** chose — BackendQuerier sets MemberView.MovedTo ONLY from a DONE
+  move op carrying `args["moved_to"]` (cross-member, per coder-a's task-34/coder-c
+  task-44 contract). A local rename (from/to only, no moved_to) is NOT a
+  forwarding pointer — resolution must not chase it to another member. Pending
+  (intent) move on the id → PendingMove; a still-held id (catalog FindID hit)
+  → Found wins even with a pending move (source readable until the move completes).
+- **Follow-up:** none
