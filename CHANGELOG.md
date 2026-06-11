@@ -6,6 +6,17 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.61 — 2026-06-11
+
+Phase 4 (DEV-46.6) — extend the WAL op_type enum with `passwd` (frozen-SPEC §10
+amendment, endorsed by maintainer). Unblocks task-46 part-2b-ii's WAL-logged
+password rotation.
+
+- `internal/wal`: `OpPasswd = "passwd"` const.
+- SPEC §10: `passwd` added to the op_type list (password-rotation op;
+  `blob_refs=["meta/auth/passwd"]`; serialized via WAL-as-lock). Additive — no
+  existing op_type changes meaning.
+
 ## v0.0.60 — 2026-06-11
 
 Phase 4 (task-46 part 2b-i) — SSH node-side password verifier. Satisfies qa-review's
