@@ -58,7 +58,11 @@ func newStatusCmd() *cobra.Command {
 			}
 
 			rows := status.Classify(treeSHA, status.ByPath(lk), present)
-			return printStatus(cmd, rows)
+			if err := printStatus(cmd, rows); err != nil {
+				return err
+			}
+			maybeUpdateNotice(cmd)
+			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&checkBlobs, "check-blobs", false, "contact the node to confirm each pushed blob is present")

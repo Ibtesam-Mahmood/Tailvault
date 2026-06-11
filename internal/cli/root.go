@@ -24,6 +24,7 @@ func newRootCmd() *cobra.Command {
 		newVaultCmd(),
 		newOpsCmd(),
 		newFedCmd(),
+		newUpdateCmd(),
 	)
 	return root
 }

@@ -1,0 +1,45 @@
+name: release
+
+# Cut a release by pushing a semver tag:
+#
+#   git tag v0.0.106 && git push origin v0.0.106
+#
+# GoReleaser then cross-compiles, embeds the version, signs + checksums the
+# archives, publishes a GitHub Release, and updates the Homebrew tap. The tag
+# must match the VERSION file (enforced by the GoReleaser `before` hook).
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write # create the GitHub Release + upload assets
+  id-token: write # cosign keyless signing via GitHub OIDC
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # GoReleaser needs full history/tags
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          # Default token can publish the Release on this repo.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # PAT (or fine-grained token) with write access to the private
+          # Ibtesam-Mahmood/homebrew-tap repo. Add it as a repo secret.
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}

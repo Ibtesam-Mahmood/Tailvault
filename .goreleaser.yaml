@@ -1,0 +1,100 @@
+# GoReleaser configuration for tailvault.
+#
+# Triggered by a pushed tag (see .github/workflows/release.yml). Builds the CLI
+# for every supported platform, embeds the version via the same ldflags the
+# Makefile uses, publishes signed, checksummed archives to a GitHub Release, and
+# updates the Homebrew tap formula.
+#
+# The asset naming under `archives.name_template` is a CONTRACT with the
+# self-updater (internal/update.ArchiveName) and install.sh — keep them in sync.
+#
+# Local dry-run (no publish):  goreleaser release --snapshot --clean
+version: 2
+
+project_name: tailvault
+
+before:
+  hooks:
+    # Fail fast if the pushed tag does not match the VERSION file — a release
+    # must never ship a mislabeled binary (CLAUDE.md: VERSION is the single
+    # source of truth). GoReleaser strips the leading "v" into .Version.
+    - sh -c 'test "$(cat VERSION)" = "{{ .Version }}" || { echo "tag {{ .Tag }} != VERSION $(cat VERSION)"; exit 1; }'
+    - go mod tidy
+
+builds:
+  - id: tailvault
+    main: ./cmd/tailvault
+    binary: tailvault
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w
+      - -X github.com/Ibtesam-Mahmood/tailvault/internal/version.Version={{ .Version }}
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+
+archives:
+  - id: tailvault
+    # tailvault_<version>_<os>_<arch>.tar.gz  (zip on Windows).
+    # MUST match internal/update.ArchiveName + install.sh.
+    name_template: "tailvault_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      - LICENSE*
+      - CHANGELOG.md
+
+checksums:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+sboms:
+  - artifacts: archive
+
+# Keyless signing of the checksums via cosign + GitHub OIDC. The release workflow
+# must grant `id-token: write` for this to work.
+signs:
+  - cmd: cosign
+    signature: "${artifact}.sig"
+    certificate: "${artifact}.pem"
+    args:
+      - sign-blob
+      - "--output-signature=${signature}"
+      - "--output-certificate=${certificate}"
+      - "${artifact}"
+      - "--yes"
+    artifacts: checksum
+    output: true
+
+brews:
+  - name: tailvault
+    repository:
+      owner: Ibtesam-Mahmood
+      name: homebrew-tap
+      # A token with write access to the (private) tap repo, provided by the
+      # release workflow as HOMEBREW_TAP_TOKEN.
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/Ibtesam-Mahmood/tailvault"
+    description: "Tailscale-native, content-addressed large-file store for git"
+    license: "MIT"
+    # While the repo is private, `brew install` relies on the user's gh/HOMEBREW
+    # GitHub token for asset download; once public this is anonymous.
+    install: |
+      bin.install "tailvault"
+    test: |
+      system "#{bin}/tailvault", "--version"
+
+release:
+  github:
+    owner: Ibtesam-Mahmood
+    name: tailvault
+  draft: false
+  prerelease: auto
+
+changelog:
+  # The repo maintains CHANGELOG.md by hand (one entry per task); don't autogen.
+  disable: true

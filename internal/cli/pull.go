@@ -53,6 +53,7 @@ func newPullCmd() *cobra.Command {
 				fmt.Fprintln(cmd.ErrOrStderr(), "warning: "+w)
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "fetched %d, skipped %d\n", len(res.Fetched), len(res.Skipped))
+			maybeUpdateNotice(cmd)
 			return nil
 		},
 	}

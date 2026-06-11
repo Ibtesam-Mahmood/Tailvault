@@ -156,9 +156,36 @@ reports a false miss under a partial view. Destructive all-members ops (gc)
 ## Installation
 
 Tailvault builds to a single static binary. The version is embedded at build
-time from the [`VERSION`](./VERSION) file — never hardcode it.
+time from the [`VERSION`](./VERSION) file — never hardcode it. Released builds
+are published to GitHub Releases (signed + checksummed) and consumed by every
+channel below; see [`docs/distribution.md`](./docs/distribution.md) for the
+release pipeline and [`docs/public-release.md`](./docs/public-release.md) for the
+go-public plan.
 
-### From source (recommended)
+> **Private-repo note.** While this repo is private, Homebrew, the shell
+> installer, and `tailvault update` need GitHub auth: either run `gh auth login`,
+> or export a read-only token as `GITHUB_TOKEN`. Once public, no auth is needed.
+
+### Homebrew (recommended)
+
+```sh
+brew install Ibtesam-Mahmood/tap/tailvault
+# update:    brew upgrade tailvault
+# uninstall: brew uninstall tailvault
+```
+
+### Shell installer
+
+The installer detects OS/arch, downloads the matching release archive, verifies
+its checksum, and installs to `/usr/local/bin` (falling back to `~/.local/bin`).
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Ibtesam-Mahmood/tailvault/main/install.sh | sh
+# pin a version:    TAILVAULT_VERSION=v0.0.106 sh -c "$(curl -fsSL …/install.sh)"
+# private repo:     GITHUB_TOKEN=ghp_xxx sh -c "$(curl -fsSL …/install.sh)"
+```
+
+### From source
 
 ```sh
 git clone https://github.com/Ibtesam-Mahmood/tailvault.git
@@ -186,9 +213,11 @@ go build -ldflags "-X github.com/Ibtesam-Mahmood/tailvault/internal/version.Vers
 go install github.com/Ibtesam-Mahmood/tailvault/cmd/tailvault@latest
 ```
 
-> Note: `go install` does not run the Makefile's `-ldflags`, so
-> `tailvault --version` will report `dev` instead of the real version. Use
-> `make build` if you want the embedded version string.
+> Note: `go install` does not run the Makefile's `-ldflags`, but `tailvault`
+> reads its module build info as a fallback, so `tailvault --version` reports the
+> real tag for `@vX.Y.Z`/`@latest` installs (only a build from an untagged local
+> checkout shows `dev`). For a private repo, first set
+> `go env -w GOPRIVATE=github.com/Ibtesam-Mahmood/*` and a git `insteadOf` rule.
 
 ### Verify
 
@@ -201,14 +230,29 @@ tailvault --help
 
 ## Updating
 
+The simplest path — works regardless of how you installed:
+
 ```sh
-cd tailvault
-git pull
-make build
-sudo install -m 0755 bin/tailvault /usr/local/bin/tailvault
+tailvault update            # download the latest release, verify, replace in place
+tailvault update --check    # just report whether a newer release exists
+tailvault update --version v0.0.106   # install a specific release (pin/downgrade)
 ```
 
-Or, for a `go install`-based setup, re-run `go install …@latest`.
+`tailvault update` verifies the download's SHA-256 against the release
+`checksums.txt` before replacing the binary, and aborts (leaving the current
+binary intact) on any mismatch. In-place self-update is unsupported on Windows —
+reinstall via the installer there. Long-lived commands (`status`, `pull`) print a
+cached, best-effort "update available" nudge; silence it with
+`TAILVAULT_NO_UPDATE_CHECK=1`.
+
+Per-channel alternatives:
+
+```sh
+brew upgrade tailvault                                   # Homebrew
+curl -fsSL …/install.sh | sh                             # shell installer (re-run)
+go install github.com/Ibtesam-Mahmood/tailvault/cmd/tailvault@latest   # go
+cd tailvault && git pull && make build                   # from source
+```
 
 Tailvault's on-node formats are **schema v2** and there is **no v1-migration
 machinery** (no real v1 vaults exist) — a reader requires `version = 2` and
@@ -219,6 +263,17 @@ dependency bump can't silently break an existing chain.
 ---
 
 ## Uninstalling
+
+The built-in path removes the binary plus client-side state (it confirms first,
+and lists exactly what it will delete):
+
+```sh
+tailvault update --uninstall            # binary + ~/.config/tailvault + ~/.tailvault
+brew uninstall tailvault                # if installed via Homebrew
+curl -fsSL …/uninstall.sh | sh          # TAILVAULT_PURGE=1 to also drop state dirs
+```
+
+Or do it by hand:
 
 ```sh
 # 1. Remove the binary

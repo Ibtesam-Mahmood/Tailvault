@@ -6,6 +6,40 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.106 — 2026-06-11
+
+### Added
+- **Distribution & self-update pipeline.** Tailvault now has a real install /
+  update / uninstall story keyed off git tags, designed to work while the repo
+  is private and flip to public with no code changes:
+  - **`tailvault update`** command: `--check` (report a newer release),
+    bare (download latest, verify SHA-256 against the release `checksums.txt`,
+    atomically replace the running binary), `--version vX.Y.Z` (pin/downgrade),
+    `--uninstall` (remove binary + `~/.config/tailvault` + `~/.tailvault`, with a
+    confirm and an explicit "node bytes untouched" guarantee), and `-y` for
+    non-interactive use. A checksum mismatch aborts and leaves the current
+    binary intact; in-place self-update is refused on Windows.
+  - **Passive update notice.** `status` and `pull` append a cached
+    (`~/.tailvault/update-check.json`, ~daily, 3s-bounded, silent-on-failure)
+    "update available" line; disable with `TAILVAULT_NO_UPDATE_CHECK=1`.
+  - **`internal/version` build-info fallback** so `go install …@vX.Y.Z` reports
+    the real tag despite ignoring `-ldflags`.
+  - **`.goreleaser.yaml`** (cross-builds, checksummed/SBOM'd/cosign-signed
+    archives, Homebrew tap, tag↔`VERSION` guard) + **`.github/workflows/release.yml`**
+    (tag-triggered).
+  - **`install.sh` / `uninstall.sh`** — `gh`/token-aware while private, anonymous
+    once public.
+  - New `internal/update` package (release discovery, semver compare, cache,
+    download/verify/replace, uninstall targets) with full unit coverage.
+- **`docs/distribution.md`** (private-repo operating manual + maintainer manual
+  steps incl. private Homebrew tap setup) and **`docs/public-release.md`**
+  (go-public runbook + user experience).
+
+### Docs
+- README install/update/uninstall sections rewritten around the new channels
+  (Homebrew, shell installer, `go install` with the corrected version note,
+  `tailvault update`).
+
 ## v0.0.105 — 2026-06-11
 
 ### Docs
