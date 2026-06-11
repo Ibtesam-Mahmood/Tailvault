@@ -6,6 +6,22 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.49 — 2026-06-11
+
+Phase 4 (task-46 part 2a of 2) — the wal-independent half of the auth command
+surface. task-46/#16 stays open (part 2b = `vault passwd` + SSH Verifier +
+enforcement audit, needs wal + the mutating commands).
+
+- `internal/auth/gate.go`: `Gate(ctx, Verifier, ReadOpts)` — password source →
+  verify → scrub; returns `ErrWrongPassword`/`ErrNoPassword`/`ErrNoPasswordSource`
+  for the command boundary to wrap as TV-AUTH-01. Never calls the verifier when no
+  password source exists (test-asserted).
+- `internal/cli/node.go`: hidden `tailvault node verify-passwd --vault <base>` (new
+  hidden `node` group). Runs on the node over SSH, reads the candidate from stdin
+  verbatim, loads the local hash file, exit 0 on match; rejected/none-set/corrupt →
+  TV-AUTH-01 (exit 2), never a false accept. The stored hash never leaves the node.
+- EDGE-CASES.md: stdin-verbatim password read, corrupt-node-hash → TV-AUTH-01.
+
 ## v0.0.48 — 2026-06-11
 
 Phase 4 (task-46 part 1 of 2) — `internal/auth`: argon2id password core (SPEC v2

@@ -99,3 +99,18 @@
   for both encode and decode; `ParsePHC` rejects padded input so a non-canonical
   file can't round-trip silently (DG-27.1).
 - **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-46 part 2a (node verify-passwd + Gate)
+- **Edge case:** `node verify-passwd` reads the candidate password from stdin — a
+  trailing newline could be ambient or a genuine password byte.
+- **Decision:** chose — read stdin VERBATIM (no trailing-newline strip). The part-2b
+  client SSH verifier writes exactly the password bytes, so an arbitrary password
+  (even one ending in whitespace) verifies byte-for-byte.
+- **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-46 part 2a (node verify-passwd + Gate)
+- **Edge case:** the on-node hash file is corrupt or unreadable during verification.
+- **Decision:** chose — refuse with TV-AUTH-01 (exit 2); never fall back to
+  client-side verification or a false accept (either would ship the stored hash
+  off-node). The hash never leaves the node.
+- **Follow-up:** none
