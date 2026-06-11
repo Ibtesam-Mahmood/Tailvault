@@ -16,10 +16,13 @@ success.
 
 ## Status
 
-**Bootstrap (v0.0.1).** Design is frozen; no Go code yet. The build is executed
-in phased PR blocks (Phases 0–9). This repo graduated from a planning workspace —
-unlike that workspace, **writing implementation code here is expected** once a
-phase calls for it.
+**Under active phased development (v0.0.104).** Design is frozen in
+[`SPEC.md`](./SPEC.md); the build runs in phased PR blocks (Phases 0–9).
+Implementation through **Blocks 0–4** — core repo workflow (init/track/status/
+push/pull/gc) plus multi-node federation, identity, WAL, auth, and recovery — is
+in place and test-covered (including a real-CLI end-to-end suite). No tagged
+stable release yet. Writing implementation code here is expected as each phase
+calls for it; keep changes small and aligned with the frozen design.
 
 ## Authoritative docs (read these first)
 
@@ -48,28 +51,42 @@ phase calls for it.
   PRs `Closes #N`, bump version + changelog, and keep `main` green.
 - The bootstrap scaffold lands on `main`; feature work goes through PRs.
 
-## Planned structure (Go — not yet created)
+## Structure (Go + Cobra CLI)
 
-The four file schemas, the error catalogue, and the resolved Open Questions are
-frozen in [`SPEC.md`](./SPEC.md) — the normative contract every implementation
-task cites. Per `proposal.md`, the implementation will be a Go + Cobra CLI:
+The four file schemas, the error catalogue, the federation contract, and the
+resolved Open Questions are frozen in [`SPEC.md`](./SPEC.md) — the normative
+contract every implementation task cites. The implemented layout:
 
 ```
-cmd/tailvault/main.go      # entry point
-internal/config/           # tailvault.toml parse/validate
-internal/lock/             # tailvault.lock parse/write + merge driver
-internal/tserr/            # structured error codes (TV-NET/NODE/OBJ) + exit map
-internal/rules/            # min_size + include/exclude glob engine
-internal/backend/          # Backend interface + ssh, taildrive impls
+cmd/tailvault/main.go      # entry point (maps errors → bucketed exit codes)
+internal/cli/              # Cobra command tree (setup/init/track/push/pull/gc/
+                           #   verify/heal + vault/fed/ops subcommands + filters)
+internal/config/           # tailvault.toml parse/validate + size units
+internal/lock/             # tailvault.lock parse/write + per-path union merge driver
 internal/pointer/          # pointer file format round-trip
+internal/rules/            # min_size + include/exclude glob engine
+internal/tserr/            # structured error codes (TV-CFG/NET/NODE/OBJ/FED/AUTH) + exit map
+internal/backend/          # Backend interface + ssh, taildrive impls
 internal/filter/           # clean/smudge driver
 internal/hooks/            # git hook callouts
-internal/gc/               # mark-and-sweep per-branch GC
 internal/gitglue/          # git command wrappers
 internal/tailscale/        # status/ping/whois wrappers
+internal/gc/ history/      # retention: mark-and-sweep GC + version history
+internal/push/ pull/ status/ revert/   # repo-side workflow
+internal/ingest/           # bootstrap/scan/track + ReplayOp + ProjectCatalog (WAL→catalog)
+internal/catalog/          # meta/catalog.toml (self-describing vault state)
+internal/wal/              # hash-chained write-ahead log + state markers
+internal/identity/         # genesis record + file-ID derivation + pull receipts
+internal/fed/              # federation roster, reachability, client cache
+internal/auth/             # argon2id password hash + mutating-op gate
+internal/locations/ setup/ # locations.toml registry + interactive node setup
+internal/ops/              # pending/failed WAL op listing + retry
+internal/verify/           # blob re-hash + 3-way integrity checks
+internal/version/          # build-time version string (embedded via -ldflags)
+internal/fedtest/ integration/   # multi-node test harness + e2e suites
 ```
 
-Build/test (once code exists): `go build ./...`, `go test ./...`,
+Build/test: `make build` (embeds `VERSION`), `go build ./...`, `go test ./...`,
 `go vet ./...`, `gofmt -l .`.
 
 ## Locked decisions (from proposal §"Open Questions" recommendations)
