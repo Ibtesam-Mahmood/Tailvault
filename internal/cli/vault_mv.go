@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -349,6 +350,13 @@ func mvCross(ctx context.Context, cmd *cobra.Command, m mvCrossCtx) error {
 			"original_path":  m.file.Genesis.OriginalPath,
 			"ingest_op_id":   m.file.Genesis.IngestOpID,
 			"origin_node":    m.file.Genesis.OriginNode,
+			// sync_mode + size make the dest record FULLY projection-faithful: a
+			// rebuilt moved-in row keeps its mode (a moved git-mode file rebuilds as
+			// git, not the §9c manual default → stays a gc candidate) and size. A move
+			// preserves sync_mode; size is the pre-move size (the live catalog write
+			// records the exact post-transfer size).
+			"sync_mode": m.file.SyncMode,
+			"size":      strconv.FormatInt(m.file.Size, 10),
 		},
 	}
 	if err := appendMoveIntent(ctx, destLog, destIntent, m.destLoc.Node); err != nil {

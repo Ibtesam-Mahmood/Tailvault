@@ -188,6 +188,10 @@ func TestVaultMv_CrossHappyPath(t *testing.T) {
 		da["origin_node"] != f.Genesis.OriginNode || da["dest_path"] != "clips/a.txt" {
 		t.Errorf("dest move record is not projection-sufficient: %v", da)
 	}
+	// sync_mode + size make the rebuilt row faithful (mode preserved, not §9c manual).
+	if da["sync_mode"] != f.SyncMode || da["size"] == "" {
+		t.Errorf("dest move record missing sync_mode/size for faithful rebuild: %v", da)
+	}
 
 	// The forwarding record is consumable: a querier hitting the OLD home reports
 	// the file as moved_to the new home (this is what lets resolution find a file

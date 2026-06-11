@@ -6,6 +6,16 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.97 — 2026-06-11
+
+### Fixed
+- **Cross-move DEST op now journals `sync_mode` + `size` (projection fidelity).**
+  Closes the advisory residual from #39: the cross-member move dest OpMove record
+  omitted sync_mode/size, so a rebuilt moved-in row defaulted to sync_mode=manual.
+  The projector already reads both keys, so adding them to the writer means a moved
+  git-mode file now rebuilds as git (stays a gc candidate) instead of silently
+  becoming manual. Additive writer-side change; no projector change needed.
+
 ## v0.0.96 — 2026-06-11
 
 ### Added
