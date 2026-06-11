@@ -6,6 +6,16 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.68 — 2026-06-11
+
+Phase 4 (task-49 engine) — `ingest.Track`: the backend-based manual-ingest
+registration engine. HashObject → genesis → WAL catch-up → catalog (via
+`PutOverwrite`) → done; idempotent, drift-aware, resumable. Self-contained engine
+(no caller yet); the `track` command wiring follows once the location-name→backend
+resolver (task-41) + lock-v2 (task-35, for `--lock`) are available.
+
+- `internal/ingest/track.go` + test. No interface changes.
+
 ## v0.0.67 — 2026-06-11
 
 Phase 4 (task-41) — `vault ls` + `vault stat` (SPEC v2 §11/§13/§14/§15). The first
