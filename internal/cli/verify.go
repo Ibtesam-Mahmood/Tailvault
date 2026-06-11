@@ -45,26 +45,26 @@ func newVerifyCmd() *cobra.Command {
 			}
 			printVerify(cmd, rep)
 
-			// 3-way verify (task-38): only when the vault is federated (has a
-			// catalog). Reconciles lock ↔ catalog ↔ disk + spot-checks the WAL.
+			// 3-way verify (task-38): reconcile lock ↔ catalog ↔ disk + spot-check the
+			// WAL. Runs even when the catalog is absent so a missing/torn catalog on a
+			// vault that HAS committed WAL history is flagged (review-38 LOW-2) rather
+			// than silently skipped; ThreeWay returns no 3-way findings for a genuinely
+			// non-federated vault (no catalog, no WAL history).
 			ctx := cmd.Context()
 			cat, err := readCatalog(ctx, be)
 			if err != nil {
 				return tserr.ConfigErr("verify: read catalog", err)
 			}
-			var findings []verify.ThreeFinding
-			if cat != nil {
-				root3, skipDisk := loc.BasePath, true
-				if loc.Backend == locations.BackendTaildrive {
-					skipDisk = false // local/mounted root → can check manual-file disk
-				}
-				findings, err = verify.ThreeWay(ctx, root3, lk, cat, &wal.Log{B: be},
-					verify.Options{SkipDisk: skipDisk})
-				if err != nil {
-					return err
-				}
-				printThreeWay(cmd, findings)
+			root3, skipDisk := loc.BasePath, true
+			if loc.Backend == locations.BackendTaildrive {
+				skipDisk = false // local/mounted root → can check manual-file disk
 			}
+			findings, err := verify.ThreeWay(ctx, root3, lk, cat, &wal.Log{B: be},
+				verify.Options{SkipDisk: skipDisk})
+			if err != nil {
+				return err
+			}
+			printThreeWay(cmd, findings)
 
 			// Combine severity: v1 corrupt/missing (exit 5) + 3-way (5 or 6).
 			code := verify.ExitCode(findings)
@@ -78,7 +78,7 @@ func newVerifyCmd() *cobra.Command {
 				return &tserr.Error{
 					Code:  tserr.ObjMissing,
 					Cause: "integrity check failed (see findings above)",
-					Fix:   "re-push from a clone, run `tailvault heal`/`vault scan`/`ops` per the finding, or investigate the node",
+					Fix:   "re-push from a clone, run `tailvault heal`/`vault scan`/`vault rebuild-catalog`/`ops` per the finding, or investigate the node",
 				}
 			}
 			return nil

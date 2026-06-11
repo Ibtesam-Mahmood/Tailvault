@@ -10,6 +10,7 @@ import (
 
 	"github.com/Ibtesam-Mahmood/tailvault/internal/catalog"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/identity"
+	"github.com/Ibtesam-Mahmood/tailvault/internal/lock"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/tserr"
 )
 
@@ -243,6 +244,95 @@ func TestVaultRestoreIdentityContentMismatchWarns(t *testing.T) {
 	loaded, _ := catalog.Load(filepath.Join(store, "meta", "catalog.toml"))
 	if f, _ := loaded.Find("media/clip.mp4"); f.ID != origID {
 		t.Errorf("restore should still apply: id %s want %s", f.ID, origID)
+	}
+}
+
+// canonicalRestoreGenesis is the genesis used by restoreFixture — reconstructed
+// so a --lock test can embed it in a lock entry and mint the same origID.
+func canonicalRestoreGenesis() identity.Genesis {
+	return identity.Genesis{
+		ContentSHA256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+		OriginalPath:  "media/clip.mp4", IngestOpID: "0192f3a4b5c6d7e8f9a0b1c2d3e4f5a6", OriginNode: "home-pi",
+	}
+}
+
+// writeRestoreLock writes a v2 tailvault.lock with a single entry at the given
+// path; pass a nil genesis (and empty id) to model the DG-35.1 not-yet-populated
+// case (push does not embed id/genesis yet).
+func writeRestoreLock(t *testing.T, path, entryPath, id string, g *identity.Genesis) {
+	t.Helper()
+	e := lock.Entry{Path: entryPath, SHA256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}
+	if g != nil {
+		e.ID, e.Genesis = id, g
+	}
+	if err := lock.Write(path, &lock.Lock{Entries: []lock.Entry{e}}, "test"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestVaultRestoreIdentityFromLock: DG-48.1 — a committed lock-v2 entry carries
+// id+genesis, so --lock/--path is a valid genesis source.
+func TestVaultRestoreIdentityFromLock(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	store, origID, _ := restoreFixture(t)
+
+	g := canonicalRestoreGenesis()
+	lockPath := filepath.Join(t.TempDir(), "tailvault.lock")
+	writeRestoreLock(t, lockPath, "media/clip.mp4", origID, &g)
+
+	out, err := runVault(t, "vault", "restore-identity", "loc/media/clip.mp4", "--lock", lockPath, "--path", "media/clip.mp4", "--yes")
+	if err != nil {
+		t.Fatalf("restore-identity --lock: %v\n%s", err, out)
+	}
+	cat, _ := catalog.Load(filepath.Join(store, "meta", "catalog.toml"))
+	if f, _ := cat.Find("media/clip.mp4"); f.ID != origID {
+		t.Fatalf("id not restored from lock: %s want %s", f.ID, origID)
+	}
+}
+
+// TestVaultRestoreIdentityLockRequiresPath: --lock without --path is a clean error.
+func TestVaultRestoreIdentityLockRequiresPath(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	restoreFixture(t)
+	g := canonicalRestoreGenesis()
+	origID, _ := identity.MintID(g)
+	lockPath := filepath.Join(t.TempDir(), "tailvault.lock")
+	writeRestoreLock(t, lockPath, "media/clip.mp4", origID, &g)
+
+	if _, err := runVault(t, "vault", "restore-identity", "loc/media/clip.mp4", "--lock", lockPath, "--yes"); err == nil {
+		t.Fatal("--lock without --path must error")
+	}
+}
+
+// TestVaultRestoreIdentityLockEmptyEntry: DG-35.1 — push does not yet populate
+// id/genesis into lock entries, so an explicitly-named entry that carries none
+// must hard-fail clearly (never silent), pointing at --receipt/--record.
+func TestVaultRestoreIdentityLockEmptyEntry(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	restoreFixture(t)
+	lockPath := filepath.Join(t.TempDir(), "tailvault.lock")
+	writeRestoreLock(t, lockPath, "media/clip.mp4", "", nil) // no embedded genesis
+
+	_, err := runVault(t, "vault", "restore-identity", "loc/media/clip.mp4", "--lock", lockPath, "--path", "media/clip.mp4", "--yes")
+	if err == nil {
+		t.Fatal("a lock entry with no embedded genesis must error")
+	}
+	if !strings.Contains(err.Error(), "no embedded genesis") {
+		t.Errorf("error should explain the deferred-population gap, got %v", err)
+	}
+}
+
+// TestVaultRestoreIdentityLockUnknownPath: --path not present in the lock errors.
+func TestVaultRestoreIdentityLockUnknownPath(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	restoreFixture(t)
+	g := canonicalRestoreGenesis()
+	origID, _ := identity.MintID(g)
+	lockPath := filepath.Join(t.TempDir(), "tailvault.lock")
+	writeRestoreLock(t, lockPath, "media/clip.mp4", origID, &g)
+
+	if _, err := runVault(t, "vault", "restore-identity", "loc/media/clip.mp4", "--lock", lockPath, "--path", "media/other.mp4", "--yes"); err == nil {
+		t.Fatal("--path absent from the lock must error")
 	}
 }
 

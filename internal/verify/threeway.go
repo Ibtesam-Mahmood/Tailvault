@@ -32,6 +32,7 @@ const (
 	PendingOpState               // intermediate state explained by a pending WAL intent
 	ChainBroken                  // WAL hash-chain verification failed
 	GenesisInvalid               // sha256(genesis) != id
+	CatalogMissing               // catalog absent but WAL shows it should exist (rebuild)
 )
 
 func (k FindingKind) String() string {
@@ -56,6 +57,8 @@ func (k FindingKind) String() string {
 		return "chain-broken"
 	case GenesisInvalid:
 		return "genesis-invalid"
+	case CatalogMissing:
+		return "catalog-missing"
 	default:
 		return "unknown"
 	}
@@ -91,9 +94,16 @@ type Options struct {
 // a file whose id is in a pending WAL intent gets one PendingOpState finding and
 // no corruption verdict — half-executed ops are the WAL's job.
 //
-// NOTE (DG-38.1): the lock↔catalog cross-check compares sha (v1 lock fields) +
-// presence; the id/genesis byte-equality + lock-side self-certification land with
-// lock schema v2 (task-35), which embeds genesis records in lock entries.
+// DG-38.1 (wired with lock schema v2, task-35): the lock↔catalog cross-check now
+// compares the federated id in addition to sha. A lock entry's embedded genesis
+// is self-certified at the command boundary (loadLockOrEmpty → lk.Validate), so
+// an id that matches the catalog id guarantees identical genesis preimages; an id
+// DIVERGENCE means two identities for one path (a FieldMismatch). Lock entries
+// with an empty id (DG-35.1: push does not yet populate id/genesis) are skipped.
+//
+// review-38 LOW-2: when cat is nil but the WAL carries committed (done) ops, the
+// catalog existed and is now missing/torn → a CatalogMissing finding pointing at
+// `vault rebuild-catalog` (verify diagnoses; it never repairs).
 func ThreeWay(ctx context.Context, root string, lk *lock.Lock, cat *catalog.Catalog, log *wal.Log, opt Options) ([]ThreeFinding, error) {
 	now := opt.Now
 	if now == nil {
@@ -106,8 +116,10 @@ func ThreeWay(ctx context.Context, root string, lk *lock.Lock, cat *catalog.Cata
 	// a break is TV-FED-03 and leaves the pending set unknowable.
 	pending := map[string]bool{} // file id → has an in-flight intent
 	chainOK := true
+	committed := false // the WAL carries at least one done op (catalog should exist)
 	if log != nil {
-		if _, err := log.Read(ctx); err != nil {
+		recs, err := log.Read(ctx)
+		if err != nil {
 			if errors.Is(err, wal.ErrChainBroken) {
 				chainOK = false
 				fs = append(fs, ThreeFinding{Kind: ChainBroken,
@@ -117,6 +129,12 @@ func ThreeWay(ctx context.Context, root string, lk *lock.Lock, cat *catalog.Cata
 			}
 		}
 		if chainOK {
+			for _, r := range recs {
+				if r.State == wal.StateDone {
+					committed = true
+					break
+				}
+			}
 			pend, err := log.Pending(ctx, "")
 			if err != nil {
 				return nil, err
@@ -130,7 +148,14 @@ func ThreeWay(ctx context.Context, root string, lk *lock.Lock, cat *catalog.Cata
 	}
 
 	if cat == nil {
-		return fs, nil // non-federated: v1 Run covers objects/.
+		// A missing catalog is benign for a never-bootstrapped or non-federated vault.
+		// But if the WAL carries committed (done) ops, the catalog existed and is now
+		// missing/torn → flag for rebuild (review-38 LOW-2). verify never repairs.
+		if committed {
+			fs = append(fs, ThreeFinding{Kind: CatalogMissing,
+				Detail: "node has committed WAL history but no catalog (missing/torn) — run `tailvault vault rebuild-catalog <location>` to rebuild it from the WAL"})
+		}
+		return fs, nil // otherwise non-federated: v1 Run covers objects/.
 	}
 
 	lockByPath := map[string]lock.Entry{}
@@ -158,12 +183,21 @@ func ThreeWay(ctx context.Context, root string, lk *lock.Lock, cat *catalog.Cata
 			continue
 		}
 
-		// lock ↔ catalog (v1 fields). lock-v2 id/genesis cross-check: DG-38.1.
+		// lock ↔ catalog: sha (v1) + federated id (lock-v2, DG-38.1).
 		if lk != nil {
 			if e, ok := lockByPath[f.Path]; ok {
 				if e.SHA256 != f.SHA256 {
 					fs = append(fs, ThreeFinding{Kind: FieldMismatch, Path: f.Path, ID: identity.Short(f.ID),
 						Detail: fmt.Sprintf("lock sha %s != catalog sha %s — run `tailvault heal`", short(e.SHA256), short(f.SHA256))})
+				}
+				// id cross-check: a federated lock entry (non-empty id, genesis already
+				// self-certified at the boundary) must claim the SAME identity as the
+				// catalog for this path. A divergence = two genesis identities for one
+				// path, strictly worse than a sha drift. Empty-id entries are skipped
+				// (DG-35.1: push does not yet populate lock id/genesis).
+				if e.ID != "" && e.ID != f.ID {
+					fs = append(fs, ThreeFinding{Kind: FieldMismatch, Path: f.Path, ID: identity.Short(f.ID),
+						Detail: fmt.Sprintf("lock id %s != catalog id %s — divergent identities for one path; run `tailvault heal`", identity.Short(e.ID), identity.Short(f.ID))})
 				}
 			} else if f.SyncMode != catalog.SyncModeGit {
 				fs = append(fs, ThreeFinding{Kind: CatalogOnlyEntry, Path: f.Path, ID: identity.Short(f.ID),
@@ -214,8 +248,8 @@ func ThreeWay(ctx context.Context, root string, lk *lock.Lock, cat *catalog.Cata
 }
 
 // ExitCode maps findings to the bucketed process exit code (most severe wins):
-// Corrupt/MissingOnDisk → 5, ChainBroken → 6, GenesisInvalid → 5, everything else
-// (informational) → 0.
+// Corrupt/MissingOnDisk/GenesisInvalid/FieldMismatch/LockOnlyEntry/CatalogMissing
+// → 5, ChainBroken → 6, everything else (informational) → 0.
 func ExitCode(fs []ThreeFinding) int {
 	code := 0
 	for _, f := range fs {
@@ -224,7 +258,7 @@ func ExitCode(fs []ThreeFinding) int {
 			if code < 6 {
 				code = 6
 			}
-		case Corrupt, MissingOnDisk, GenesisInvalid, FieldMismatch, LockOnlyEntry:
+		case Corrupt, MissingOnDisk, GenesisInvalid, FieldMismatch, LockOnlyEntry, CatalogMissing:
 			if code < 5 {
 				code = 5
 			}

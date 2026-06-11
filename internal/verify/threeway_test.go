@@ -176,6 +176,89 @@ func TestThreeWayNilCatalogNoFindings(t *testing.T) {
 	root, _, log := vault(t, map[string]string{"a.txt": "alpha"})
 	fs, err := ThreeWay(context.Background(), root, nil, nil, log, opt())
 	if err != nil || len(fs) != 0 {
-		t.Fatalf("nil catalog → no 3-way findings, got %+v err %v", fs, err)
+		t.Fatalf("nil catalog + no WAL history → no 3-way findings, got %+v err %v", fs, err)
+	}
+}
+
+// TestThreeWayLockIDMismatch: DG-38.1 — a federated lock entry whose id diverges
+// from the catalog id for the same path is a FieldMismatch (two identities for
+// one path), even when the sha agrees.
+func TestThreeWayLockIDMismatch(t *testing.T) {
+	root, cat, log := vault(t, map[string]string{"a.txt": "alpha"})
+	diffID := "9999999999999999999999999999999999999999999999999999999999999999"
+	lk := &lock.Lock{Version: 2, Entries: []lock.Entry{
+		{Path: "a.txt", SHA256: cat.Files[0].SHA256, ID: diffID}, // sha agrees, id differs
+	}}
+	fs, _ := ThreeWay(context.Background(), root, lk, cat, log, opt())
+	if kinds(fs)[FieldMismatch] != 1 || ExitCode(fs) != 5 {
+		t.Fatalf("want 1 FieldMismatch (id divergence) exit5, got %+v exit=%d", fs, ExitCode(fs))
+	}
+}
+
+// TestThreeWayLockIDMatchNoFinding: a lock id that matches the catalog id (sha
+// also agreeing) yields no finding — guards against a false positive.
+func TestThreeWayLockIDMatchNoFinding(t *testing.T) {
+	root, cat, log := vault(t, map[string]string{"a.txt": "alpha"})
+	lk := &lock.Lock{Version: 2, Entries: []lock.Entry{
+		{Path: "a.txt", SHA256: cat.Files[0].SHA256, ID: cat.Files[0].ID},
+	}}
+	fs, _ := ThreeWay(context.Background(), root, lk, cat, log, opt())
+	if kinds(fs)[FieldMismatch] != 0 {
+		t.Fatalf("matching id+sha must not flag, got %+v", fs)
+	}
+}
+
+// TestThreeWayLockEmptyIDSkipped: DG-35.1 — push does not yet populate id/genesis
+// into lock entries, so an empty-id lock entry skips the id cross-check (only sha
+// is compared).
+func TestThreeWayLockEmptyIDSkipped(t *testing.T) {
+	root, cat, log := vault(t, map[string]string{"a.txt": "alpha"})
+	lk := &lock.Lock{Version: 2, Entries: []lock.Entry{
+		{Path: "a.txt", SHA256: cat.Files[0].SHA256}, // empty id (not yet populated)
+	}}
+	fs, _ := ThreeWay(context.Background(), root, lk, cat, log, opt())
+	if kinds(fs)[FieldMismatch] != 0 {
+		t.Fatalf("empty-id lock entry must be skipped, got %+v", fs)
+	}
+}
+
+// TestThreeWayCatalogMissingWithWAL: review-38 LOW-2 — a nil catalog on a vault
+// that HAS committed (done) WAL history means the catalog is missing/torn → a
+// CatalogMissing finding pointing at rebuild-catalog (exit 5).
+func TestThreeWayCatalogMissingWithWAL(t *testing.T) {
+	root, _, log := vault(t, map[string]string{"a.txt": "alpha"})
+	ctx := context.Background()
+	rec, err := log.AppendIntent(ctx, wal.Entry{OpID: wal.NewOpID(), OpType: wal.OpMove,
+		BlobRefs: []string{"x"}, Actor: "a", CreatedAt: t0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := log.MarkDone(ctx, rec.Entry.OpID); err != nil {
+		t.Fatal(err)
+	}
+	fs, err := ThreeWay(ctx, root, nil, nil, log, opt())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kinds(fs)[CatalogMissing] != 1 || ExitCode(fs) != 5 {
+		t.Fatalf("want 1 CatalogMissing exit5, got %+v exit=%d", fs, ExitCode(fs))
+	}
+}
+
+// TestThreeWayCatalogMissingNoWALBenign: a nil catalog with only a PENDING (not
+// done) op is not yet a committed vault → no CatalogMissing finding.
+func TestThreeWayCatalogMissingNoWALBenign(t *testing.T) {
+	root, _, log := vault(t, map[string]string{"a.txt": "alpha"})
+	ctx := context.Background()
+	if _, err := log.AppendIntent(ctx, wal.Entry{OpID: wal.NewOpID(), OpType: wal.OpMove,
+		BlobRefs: []string{"x"}, Actor: "a", CreatedAt: t0}); err != nil {
+		t.Fatal(err)
+	}
+	fs, err := ThreeWay(ctx, root, nil, nil, log, opt())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kinds(fs)[CatalogMissing] != 0 {
+		t.Fatalf("a pending-only WAL must not flag a missing catalog, got %+v", fs)
 	}
 }

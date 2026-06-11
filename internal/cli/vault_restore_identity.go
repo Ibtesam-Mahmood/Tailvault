@@ -12,6 +12,7 @@ import (
 	"github.com/Ibtesam-Mahmood/tailvault/internal/identity"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/ingest"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/locations"
+	"github.com/Ibtesam-Mahmood/tailvault/internal/lock"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/setup"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/tserr"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/wal"
@@ -19,8 +20,8 @@ import (
 
 // newVaultRestoreIdentityCmd implements manual identity recovery (D24): re-seed a
 // rebuilt catalog entry with its ORIGINAL self-certifying id from a surviving
-// genesis record (a pull receipt or a raw record; the lock-v2 source lands with
-// task-35). Never implicit — always explicit, confirmed, WAL-audited, and
+// genesis record (a pull receipt, a raw record, or a committed tailvault.lock v2
+// entry via --lock/--path). Never implicit — always explicit, confirmed, WAL-audited, and
 // PASSWORD-GATED: restore overwrites the genesis identity (the integrity root),
 // so per the §16 amendment (DEV-48.2) it is a gated mutation (gateLocation gates
 // SSH node-side only; a taildrive/local mount rides ACL + mount perms).
@@ -206,8 +207,37 @@ func loadGenesisSource(src restoreSources) (identity.Genesis, string, error) {
 			return identity.Genesis{}, "", tserr.ConfigErr("restore-identity: read --record", err)
 		}
 		return g, "", nil
-	default: // --lock — needs lock schema v2 (task-35); not yet on the tip (DG-48.1).
-		return identity.Genesis{}, "", tserr.ConfigErr("restore-identity: --lock source needs lock schema v2 (task-35), not yet available; use --receipt or --record", nil)
+	default: // --lock (DG-48.1) — a tailvault.lock (v2) embeds id+genesis per entry,
+		// so a surviving clone's lock is an off-node identity backup. Needs --path to
+		// name which entry to read.
+		if src.lockPath == "" {
+			return identity.Genesis{}, "", tserr.ConfigErr("restore-identity: --lock requires --path <repo-path> to name the lock entry", nil)
+		}
+		lk, err := lock.Load(src.lockFile)
+		if err != nil {
+			return identity.Genesis{}, "", tserr.ConfigErr("restore-identity: read --lock", err)
+		}
+		// Self-certify the source lock before trusting any genesis it carries: a v1
+		// lock or a torn id↔genesis pairing must never seed an identity restore.
+		if err := lk.Validate(); err != nil {
+			return identity.Genesis{}, "", tserr.ConfigErr("restore-identity: --lock fails self-certification", err)
+		}
+		for i := range lk.Entries {
+			e := &lk.Entries[i]
+			if e.Path != src.lockPath {
+				continue
+			}
+			// DG-35.1: push does not yet populate id/genesis into lock entries, so a
+			// legitimately-written lock entry may carry none. The user named THIS entry
+			// explicitly, so there is nothing to skip to — hard-fail clearly (never a
+			// silent success) and point at the working sources.
+			if e.ID == "" || e.Genesis == nil {
+				return identity.Genesis{}, "", tserr.ConfigErr(fmt.Sprintf(
+					"restore-identity: --lock entry %q carries no embedded genesis (lock id/genesis population is deferred — DG-35.1); use --receipt or --record", src.lockPath), nil)
+			}
+			return *e.Genesis, e.ID, nil
+		}
+		return identity.Genesis{}, "", tserr.ConfigErr(fmt.Sprintf("restore-identity: --lock has no entry at path %q", src.lockPath), nil)
 	}
 }
 

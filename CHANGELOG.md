@@ -6,6 +6,24 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.85 — 2026-06-11
+
+### Added
+- **`restore-identity --lock <file> --path <repo-path>` (DG-48.1).** Restore can now
+  source the genesis from a committed lock-v2 entry's embedded `genesis` (self-
+  certified via `lock.Validate` before use). An explicitly-named lock entry that
+  carries no genesis hard-fails clearly (never silent — points at `--receipt` /
+  `--record`), handling the DG-35.1 interim where push leaves lock id/genesis empty.
+- **verify 3-way lock↔catalog cross-check now compares federated id (DG-38.1).** In
+  addition to sha, id divergence between lock and catalog is reported as a
+  FieldMismatch; empty-id lock entries are skipped (DG-35.1).
+
+### Fixed
+- **verify no longer infers federation from catalog presence (review-38 LOW-2).**
+  A catalog that is absent while committed WAL ops exist now yields a CatalogMissing
+  finding (exit 5) pointing at `tailvault vault rebuild-catalog <location>`. ThreeWay
+  runs even when the catalog is nil so the case is reached.
+
 ## v0.0.84 — 2026-06-11
 
 ### Added
