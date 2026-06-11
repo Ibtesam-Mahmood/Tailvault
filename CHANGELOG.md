@@ -6,6 +6,20 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.108 — 2026-06-11
+
+### Docs
+- **Compressed `README.md` to base information** (what it is, quick install, quick
+  start, doc index) and moved the detailed sections into encapsulated `docs/`
+  files, each linked from the README:
+  - `docs/install.md` — install / update / uninstall / **sharing with others on a
+    private repo** (grant access + auth), all channels, requirements.
+  - `docs/how-it-works.md` — modes, moving parts, data flow, identity, federation,
+    features, use cases.
+  - `docs/commands.md` — quick starts + full command reference.
+  - `docs/configuration.md` — `tailvault.toml`, `locations.toml`, state dirs.
+  - `docs/troubleshooting.md` — error/exit codes + caveats & known issues.
+
 ## v0.0.107 — 2026-06-11
 
 ### Changed
