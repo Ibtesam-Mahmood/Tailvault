@@ -129,6 +129,13 @@ type BootstrapOpts struct {
 	Progress Progress         // optional
 	Now      func() time.Time // optional; defaults to time.Now
 	BatchN   int              // catalog flush cadence; default 256
+	// Hook is an OPTIONAL fault-injection seam for tests (the fedtest harness,
+	// task-39): it is called at named lifecycle steps ("after-intent",
+	// "after-catalog") and, if it returns a non-nil error, Bootstrap aborts there
+	// leaving genuinely torn on-disk state (a written WAL intent without its done
+	// marker, or a flushed catalog whose done markers were never written) — exactly
+	// the crash states verify/ops must detect and repair. nil in production.
+	Hook func(step string) error
 }
 
 // Bootstrap ingests the plan. For each candidate, the file ID (and so its WAL
@@ -170,8 +177,17 @@ func Bootstrap(ctx context.Context, o BootstrapOpts) error {
 	var doneBytes int64
 	var pendingDone []string // op ids whose .done marker is owed after the next flush
 
+	hook := o.Hook
+	if hook == nil {
+		hook = func(string) error { return nil }
+	}
+
 	flush := func() error {
 		if err := catalog.WriteAtomic(o.CatPath, o.Cat); err != nil {
+			return err
+		}
+		// Crash window: catalog is durable but done markers are not yet written.
+		if err := hook("after-catalog"); err != nil {
 			return err
 		}
 		for _, id := range pendingDone {
@@ -236,6 +252,16 @@ func Bootstrap(ctx context.Context, o BootstrapOpts) error {
 			}
 			o.Cat.Upsert(row)
 			pendingDone = append(pendingDone, opID)
+			// Crash window: WAL intent (and the on-disk bytes) exist, but the
+			// catalog has not been flushed and no done marker is written. For a
+			// manual ingest the bytes already live on disk, so "after-bytes" and
+			// "after-intent" leave the same torn state.
+			if err := hook("after-intent"); err != nil {
+				return err
+			}
+			if err := hook("after-bytes"); err != nil {
+				return err
+			}
 		}
 
 		doneBytes += c.Size

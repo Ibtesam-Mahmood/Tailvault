@@ -6,6 +6,17 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.91 — 2026-06-11
+
+### Added
+- **`internal/fedtest` — multi-node federation test harness + `NewDemoRepo` (task-39).**
+  N stub members with reachability switches and a same-node real-local-FS mode so
+  integration tests can drive real root-Cobra command paths against real on-disk
+  state (not mocks). Plus a small `internal/ingest/bootstrap.go` helper. This is the
+  fixture coder-c's Block-4 integration suite (task-50) builds on. (Rebased onto
+  the current tip from the corrected ws-b stack; the SSH-stub gating-capable member
+  + #39 projector land in the following commits.)
+
 ## v0.0.90 — 2026-06-11
 
 ### Changed
