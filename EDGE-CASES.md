@@ -403,3 +403,26 @@
 - **Follow-up:** ⚠ THREAT-MODEL (task-51): mutating ops over a taildrive mount bypass the
   password gate (tailnet ACL + mount perms are the only barrier). Revisit whether
   password-required ops should refuse taildrive backends outright in a future SPEC rev.
+
+- **Date / Task:** 2026-06-11 / task-38 (3-way verify)
+- **Edge case:** verify's edited-vs-corrupt verdict must NOT fork from scan's, or the
+  two tools would disagree on the same file; and the freshness heuristic needs the
+  disk mtime, which the Backend interface does not expose.
+- **Decision:** chose — extracted `ingest.ClassifyDrift(entry, diskSize, diskMtime)` as
+  the single shared heuristic (scan + verify both call it). ThreeWay's catalog↔disk
+  manual-file check is LOCAL-root (os.Stat for size+mtime), matching scan/bootstrap's
+  local model (DG-33.1); pending-op suppression runs BEFORE any corruption verdict
+  (load-bearing); WAL spot-check = wal.Read (hashes raw on-disk bytes per link, so it
+  IS the independent re-derivation — no separate sample).
+- **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-38 (3-way verify) [deferrals]
+- **Edge case:** the lock↔catalog id/genesis byte-equality + lock-side
+  self-certification need lock-v2 (task-35, embeds genesis in lock entries), which
+  isn't on the tip; and the manual-file disk check needs a local root.
+- **Decision:** punted — DG-38.1: lock↔catalog cross-check compares sha + presence (v1
+  lock fields) now; id/genesis cross-check wires when task-35 lands. DG-38.2: remote
+  (SSH) verify sets Options.SkipDisk (WAL/genesis/lock-reconcile still run; manual-file
+  disk verify deferred like scan). Local/taildrive run the full check.
+- **Follow-up:** wire lock-v2 id/genesis cross-check after task-35; remote manual-file
+  disk verify when SSH bootstrap lands.

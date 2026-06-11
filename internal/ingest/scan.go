@@ -53,6 +53,20 @@ type Change struct {
 	Size    int64
 }
 
+// ClassifyDrift decides whether a manual file's content drift is a legitimate
+// edit or possible corruption, per the H12 freshness heuristic. Call ONLY when a
+// real drift exists (disk sha != entry.SHA256): returns Edited if the file's size
+// or mtime moved since last_scanned (a normal in-place edit — absorb via scan),
+// else Suspect (bytes changed with NO mtime/size movement → the bytes rotted
+// under us). Shared by scan (task-34) and verify (task-38) so their edited-vs-
+// corrupt verdicts can never diverge.
+func ClassifyDrift(entry catalog.File, diskSize int64, diskMtime time.Time) ChangeKind {
+	if diskSize != entry.Size || diskMtime.After(entry.LastScanned) {
+		return Edited
+	}
+	return Suspect
+}
+
 // hashFileFunc is the hashing seam (overridden in tests to count invocations and
 // assert lazy hashing).
 var hashFileFunc = func(root, rel string) (string, error) {
@@ -104,10 +118,7 @@ func Diff(ctx context.Context, root string, ig *Ignore, cat *catalog.Catalog, pa
 			changes = append(changes, Change{Kind: Verified, Path: f.Path, File: f, SHA256: sum, Size: c.Size})
 			continue
 		}
-		kind := Suspect
-		if moved {
-			kind = Edited
-		}
+		kind := ClassifyDrift(f, c.Size, c.ModTime)
 		changes = append(changes, Change{Kind: kind, Path: f.Path, File: f, SHA256: sum, Size: c.Size})
 	}
 

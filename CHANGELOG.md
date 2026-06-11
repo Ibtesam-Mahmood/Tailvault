@@ -6,6 +6,20 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.73 — 2026-06-11
+
+Phase 4 (task-38) — 3-way verify (lock ↔ catalog ↔ disk + WAL spot-check).
+
+- `internal/verify/threeway.go`: `ThreeWay()` reconciles lock↔catalog↔disk with a WAL
+  spot-check; full finding taxonomy + `ExitCode` (corrupt/missing/genesis→5,
+  chain-broken→6, informational→0). Read-only; the oracle for task-39's crash/tamper
+  integration assertions.
+- Extracted `ingest.ClassifyDrift` (shared edited-vs-corrupt heuristic) so scan + verify
+  can't diverge (behavior-preserving refactor of scan.go). `internal/cli/verify.go` runs
+  the 3-way path when the vault is federated, returns the most-severe exit.
+- Deferrals: DG-38.1 (lock↔catalog id/genesis cross-check needs lock-v2/task-35),
+  DG-38.2 (remote SSH manual-file disk check = SkipDisk, like scan/DG-33.1).
+
 ## v0.0.72 — 2026-06-11
 
 Phase 4 (DEV-46.8) — `gateLocation` gates SSH node-side ONLY. The §16 password gate
