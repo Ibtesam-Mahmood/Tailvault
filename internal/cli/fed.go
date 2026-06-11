@@ -142,7 +142,7 @@ func newFedJoinCmd() *cobra.Command {
 	cmd.Flags().StringVar(&via, "via", "", "sponsoring member to discover the roster from (default: any registered member)")
 	cmd.Flags().StringVar(&passwordFile, "password-file", "", "read member passwords from this file")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "machine-readable JSON output")
-	return cmd
+	return markGated(cmd)
 }
 
 type fedFlags struct {
@@ -222,7 +222,7 @@ func newFedLeaveCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&passwordFile, "password-file", "", "read member passwords from this file")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "machine-readable JSON output")
-	return cmd
+	return markGated(cmd)
 }
 
 func runFedLeave(cmd *cobra.Command, locName string, fl fedFlags) error {
@@ -283,7 +283,7 @@ func newFedEvictCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&passwordFile, "password-file", "", "read surviving-member passwords from this file")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "machine-readable JSON output")
-	return cmd
+	return markGated(cmd)
 }
 
 func runFedEvict(cmd *cobra.Command, member string, fl fedFlags) error {

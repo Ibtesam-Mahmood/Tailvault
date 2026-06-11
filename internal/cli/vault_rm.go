@@ -45,7 +45,7 @@ func newVaultRmCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&yes, "yes", false, "skip the interactive confirmation (for scripts)")
 	cmd.Flags().StringVar(&passwordFile, "password-file", "", "read the vault password from this file")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "machine-readable JSON output")
-	return cmd
+	return markGated(cmd)
 }
 
 type rmFlags struct {

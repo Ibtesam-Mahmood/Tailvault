@@ -6,6 +6,26 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.89 — 2026-06-11
+
+### Added
+- **`vault passwd <location>` — set/change the node password (task-46-pt2b-ii,
+  closes #16).** Reads the new password (TTY double-confirm or
+  `--new-password-file`), derives an argon2id PHC hash via `internal/auth`, writes
+  it to `meta/auth/passwd` via the backend's atomic `PutOverwrite`, then best-effort
+  chmod 0600. A first SET is ungated (no password exists yet); a CHANGE is gated on
+  the OLD password. WAL-logged (OpPasswd, BlobRefs locks the auth file). Empty
+  password rejected before any write; output documents the no-recovery reset path.
+  Flags `--password-file` (old pw / gate), `--new-password-file`, `--json`.
+- **§16 enforcement audit (`auth_enforcement_test.go`).** A `tailvault.gated` cobra
+  annotation (`markGated`) marks every gated command; the audit walks the command
+  tree and asserts annotated command names ⊆ the SPEC §16 allow-list
+  {mv, rm, sync-mode, passwd, evict, join, leave, restore-identity, gc}, that no read
+  (ls/stat/get/status/scan) is gated, and that every gated command present is
+  annotated. mv/rm/sync-mode/passwd + fed join/leave/evict are marked. (restore-
+  identity + gc annotations land via their owners; the audit's mustBeGated set
+  tightens to require them in task-50.)
+
 ## v0.0.88 — 2026-06-11
 
 ### Fixed

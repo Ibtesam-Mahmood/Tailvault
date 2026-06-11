@@ -54,7 +54,7 @@ func newVaultMvCmd() *cobra.Command {
 	cmd.Flags().StringVar(&renameTo, "rename-to", "", "destination path for --on-conflict=rename")
 	cmd.Flags().StringVar(&passwordFile, "password-file", "", "read the vault password from this file")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "machine-readable JSON output")
-	return cmd
+	return markGated(cmd)
 }
 
 type mvFlags struct {

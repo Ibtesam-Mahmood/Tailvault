@@ -45,7 +45,7 @@ func newVaultSyncModeCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&passwordFile, "password-file", "", "read the vault password from this file")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "machine-readable JSON output")
-	return cmd
+	return markGated(cmd)
 }
 
 type syncFlags struct {

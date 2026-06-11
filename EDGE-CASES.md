@@ -726,3 +726,33 @@
   to REQUIRE an empty WAL, that precondition can be added (DEVIATION 2).
 - **Follow-up:** task-27/SPEC-owner confirm §13 intent (empty-WAL precondition vs
   constructed-derivation).
+
+- **Date / Task:** 2026-06-11 / task-46-pt2b-ii (vault passwd — 0600 hash file)
+- **Edge case:** the password hash is a secret, but PutOverwrite writes with the
+  backend's default file mode.
+- **Decision:** chose — after PutOverwrite, best-effort chmod the secret to 0600
+  (`secureHashFile`): SSH runs a remote `chmod 600`, a local mount chmods directly.
+  Defense-in-depth. A backend that can't chmod leaves the secret at its default mode.
+- **Follow-up:** Block 5 — a mode-aware write primitive in the Backend interface
+  (per-file mode is not currently part of it).
+
+- **Date / Task:** 2026-06-11 / task-46-pt2b-ii (vault passwd — taildrive change is ungated)
+- **Edge case:** a password CHANGE is gated on the OLD password, but a passive
+  taildrive mount can't run the node-side verifier.
+- **Decision:** chose — consistent with DEV-46.8 (gateLocation SSH-only): a CHANGE on
+  a taildrive vault is ungated, relying on mount perms; SSH old-password verification
+  is the real gate. The "wrong old password rejected" behavioral test needs SSH →
+  task-50 stub.
+- **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-46-pt2b-ii (§16 enforcement audit — annotation-based)
+- **Edge case:** Go can't statically prove a command "calls gateLocation", so the
+  audit can't introspect the call graph to find gated commands.
+- **Decision:** chose — an annotation-based audit: a `tailvault.gated` marker
+  (`markGated`) is set in the same constructor that wires the gate, binding the two.
+  The audit is branch-robust (validates whatever gated commands are present), so it
+  passes in an isolated branch and tightens in integration. restore-identity (coder-a)
+  + gc (coder-b) get annotated by their owners; task-50 tightens mustBeGated to
+  require them.
+- **Follow-up:** task-50 — tighten mustBeGated to include restore-identity + gc once
+  annotated by their owners.
