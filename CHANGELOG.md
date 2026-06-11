@@ -6,6 +6,17 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.53 — 2026-06-11
+
+Phase 3 (task-31) — `internal/fed`: federation roster merge, advisory client caches,
+reachability accounting (SPEC v2 §13/§14). Rebased onto real wal + identity.
+
+- Roster merge (status lifecycle) reusing catalog.Federation/Member (DEV-B:
+  `fed.Member = catalog.Member` alias — no import cycle, no converters).
+- Advisory client caches (current/previous, last-seen) — never authoritative for
+  resolution decisions. Reachability accounting for per-op all-members-reachable checks.
+- `-race` clean across internal/fed.
+
 ## v0.0.52 — 2026-06-11
 
 Phase 3 (task-30) — `internal/identity`: genesis-hash file IDs + pull receipts

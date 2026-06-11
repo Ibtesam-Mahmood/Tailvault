@@ -179,3 +179,36 @@
   client-side verification or a false accept (either would ship the stored hash
   off-node). The hash never leaves the node.
 - **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-31 (internal/fed)
+- **Edge case:** SPEC §8b reserves `fed.Member`/`fed.Roster`/`fed.Snapshot`, but
+  §9/§13 make the catalog the serialization home of the roster wire types, and
+  catalog is a leaf package (fed→catalog, never the reverse). Two distinct named
+  types for one record would force converters across fed/lock/verify.
+- **Decision:** chose — catalog owns `catalog.Member`/`catalog.Federation`;
+  `internal/fed` declares `type Member = catalog.Member` (alias) to honor §8b
+  with zero duplication and no import cycle. Confirmed with coder-a (task-28
+  keeps its types unchanged). Logged as DEV-B for the PR DEVIATIONS section.
+- **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-31 (internal/fed)
+- **Edge case:** the task sketch put a `Roster Roster toml:"-"` field on
+  `Snapshot`, but §14's on-disk cache format carries no separate roster section —
+  only `fed_id`, `taken_at`, and a `[[member]]` array (name/node/status + summary
+  fields). A stored-but-untagged roster field would duplicate the member rows.
+- **Decision:** chose — `Snapshot` matches the §14 wire exactly; the roster is
+  reconstructed on demand via `(*Snapshot).Roster()` from the member rows
+  (joined_at is absent from the cache, so reconstructed members carry a zero
+  JoinedAt — acceptable since the cache is advisory and never feeds Merge/fan-out).
+- **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-31 (internal/fed)
+- **Edge case:** `Reach.Probe` must not let one hung member stall the whole
+  fan-out, but the injected prober might ignore ctx and block forever.
+- **Decision:** chose — buffered-channel fan-in that stops collecting on
+  `ctx.Done()` and records any not-yet-answered member as Unreachable (bias to
+  "cannot confirm"); a leaked hung goroutine drains into the buffered channel and
+  exits without wedging the caller. Hard per-member bounds come from passing a
+  ctx deadline or a self-timing-out prober (documented on Probe).
+- **Follow-up:** Block 7 candidate — revisit whether a default per-member
+  timeout should be baked in rather than left to the caller's ctx.
