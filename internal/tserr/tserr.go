@@ -7,6 +7,7 @@ package tserr
 import (
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // Code is a stable, documented error identifier surfaced to users and scripts.
@@ -20,6 +21,11 @@ const (
 	NodeNotWritable Code = "TV-NODE-02" // node reachable but base_path not writable
 	ObjMissing      Code = "TV-OBJ-01"  // expected blob missing on the node
 	AuthRequired    Code = "TV-AUTH-01" // password missing/rejected on a mutating remote op
+
+	// v2 federation codes (SPEC v2 §15) — all map to the new exit bucket 6.
+	FedPartialView    Code = "TV-FED-01" // not found among reachable members; ≥1 unreachable ("cannot prove absence")
+	FedNeedAllMembers Code = "TV-FED-02" // op needs ALL members (gc) but ≥1 was unreachable
+	FedChainBroken    Code = "TV-FED-03" // WAL hash-chain verification failed (tamper/corruption)
 )
 
 // Error is a typed tailvault failure: stable code, one-line cause, concrete fix.
@@ -39,7 +45,7 @@ func (e *Error) Unwrap() error { return e.Err }
 // ExitCode maps a code into the proposal's bucketed process exit codes:
 //
 //	0 success, 2 config/precondition, 3 network/Tailscale,
-//	4 node unreachable, 5 integrity/missing blob.
+//	4 node unreachable, 5 integrity/missing blob, 6 federation/partial view.
 //
 // The bucket numbers are a public contract (the pre-push hook reads them) — do
 // not renumber.
@@ -55,6 +61,8 @@ func (e *Error) ExitCode() int {
 		// SPEC v2 §16: TV-AUTH-01 reuses bucket 2 (precondition/auth) — the op is
 		// refused before any work, exactly like a config precondition. No new bucket.
 		return 2
+	case FedPartialView, FedNeedAllMembers, FedChainBroken:
+		return 6 // federation / partial view (SPEC v2 §15)
 	default:
 		return 2 // config/precondition fallback — any unmapped code fails safe
 	}
@@ -113,6 +121,50 @@ func NodeNotWritableErr(node string, err error) *Error {
 		Fix:   "check the SSH user / Taildrive share and base_path permissions",
 		Err:   err,
 	}
+}
+
+// FedPartialViewErr reports that a file was not found among the reachable
+// members while at least one member was unreachable — absence cannot be proven.
+// This is the safety verdict that prevents a down member from degrading into a
+// silent "missing". Maps to exit bucket 6 (SPEC v2 §15).
+func FedPartialViewErr(id string, unreachable []string, err error) *Error {
+	return &Error{
+		Code:  FedPartialView,
+		Cause: fmt.Sprintf("file %s not found among reachable members; %s unreachable (cannot prove absence)", id, joinMembers(unreachable)),
+		Fix:   "bring the offline member(s) online and retry, or run `tailvault ops` / check the cache for last-known state",
+		Err:   err,
+	}
+}
+
+// FedNeedAllMembersErr reports that an all-members operation (gc) ran while at
+// least one member was unreachable. Maps to exit bucket 6 (SPEC v2 §15, D27/R3).
+func FedNeedAllMembersErr(op string, unreachable []string, err error) *Error {
+	return &Error{
+		Code:  FedNeedAllMembers,
+		Cause: fmt.Sprintf("%s requires all federation members but %s unreachable", op, joinMembers(unreachable)),
+		Fix:   "bring all members online and retry; deletes never tolerate partial views",
+		Err:   err,
+	}
+}
+
+// FedChainBrokenErr reports that a member's WAL hash-chain failed verification
+// (tamper or corruption). Maps to exit bucket 6 (SPEC v2 §15).
+func FedChainBrokenErr(node string, err error) *Error {
+	return &Error{
+		Code:  FedChainBroken,
+		Cause: fmt.Sprintf("WAL hash-chain verification failed on node %q", node),
+		Fix:   "inspect with the chain-verify tooling; restore the affected node's WAL from a clone/backup",
+		Err:   err,
+	}
+}
+
+// joinMembers renders an unreachable-member list for error text, tolerating an
+// empty list (defensive — TV-FED-01/02 always carry ≥1 by construction).
+func joinMembers(members []string) string {
+	if len(members) == 0 {
+		return "an unknown member"
+	}
+	return strings.Join(members, ", ")
 }
 
 // ObjMissingErr reports that an expected content-addressed blob is missing.

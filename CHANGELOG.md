@@ -6,6 +6,20 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.54 — 2026-06-11
+
+Phase 3 (task-32) — federation resolution engine + `TV-FED-*` error codes (SPEC v2
+§15). Rebased onto real wal + identity; exercised against the actual implementations.
+
+- `internal/fed/resolve.go`: fan-out resolution + `moved_to` follow (reachable/down/
+  2-hop/cycle), pending-move-blocks-missing, chain-broken propagation, exact reach
+  metadata. Pending-move surfaced via an injected Querier seam (DEV-B2: NO compile
+  dependency on wal/identity — clean layering; concrete Querier lands as the
+  pulled-forward fed.BackendQuerier).
+- `internal/tserr`: `TV-FED-01/02/03` + **exit bucket 6** (partial-view), coexisting
+  with `TV-AUTH-01` (bucket 2). FED-01 exit 6 vs OBJ-01 exit 5 distinction exact.
+- 45 PASS subtests across fed+tserr; cache colors never decide resolution.
+
 ## v0.0.53 — 2026-06-11
 
 Phase 3 (task-31) — `internal/fed`: federation roster merge, advisory client caches,
