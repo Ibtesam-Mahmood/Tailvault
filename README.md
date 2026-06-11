@@ -20,11 +20,13 @@ The headline guarantees:
   **hard-fails loudly** if the node is down or an expected blob is missing — a
   green `git push` means the bytes actually landed on storage.
 
-> **Status — v0.0.104, under active phased development.** The CLI is implemented
-> and test-covered through Blocks 0–4 (core workflow + multi-node federation).
-> The design is frozen in [`SPEC.md`](./SPEC.md); the build proceeds in phased PR
-> blocks. This is a personal project, not yet a tagged stable release. See
-> [Status & roadmap](#status--roadmap).
+> **Status — v0.0.106, under active phased development.** The CLI is implemented
+> and test-covered through Blocks 0–4 (core workflow + multi-node federation), and
+> tagged releases now ship prebuilt, checksummed binaries via Homebrew, a shell
+> installer, `go install`, and `tailvault update`. The design is frozen in
+> [`SPEC.md`](./SPEC.md); the build proceeds in phased PR blocks. This is a
+> personal project and pre-1.0 — installable, but with no stability commitment
+> yet. See [Status & roadmap](#status--roadmap).
 
 ---
 
@@ -494,8 +496,9 @@ Exit buckets: `0` success · `1` unclassified · `2` config/precondition/auth ·
 ## Caveats & known issues
 
 - **Pre-1.0, personal project.** The CLI is implemented and test-covered through
-  Blocks 0–4, but there is no tagged stable release; expect rough edges and
-  format churn only within the frozen v2 contract.
+  Blocks 0–4 and ships tagged, installable releases, but there is no 1.0
+  stability commitment; expect rough edges and format churn only within the
+  frozen v2 contract.
 - **SSH backend only (today).** The **Taildrive** backend is designed but not yet
   the shipped path — use the `ssh` backend.
 - **Single active writer assumed (early).** Lock conflicts use a per-path union
@@ -513,8 +516,6 @@ Exit buckets: `0` success · `1` unclassified · `2` config/precondition/auth ·
 - **Destructive ops gate on full reachability.** `gc` refuses while any
   federation member is unreachable (by design — deletes never tolerate a partial
   view); bring all members online to run it.
-- **`go install` reports `dev`.** The version string is only embedded via
-  `make build`'s `-ldflags`; `go install` builds report `dev`.
 - **Tailscale local-session only.** Node discovery uses the local,
   already-authenticated daemon (`tailscale status --json`) — there's no API
   login or stored-credential fallback if the daemon can't enumerate peers (use
