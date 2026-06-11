@@ -1,9 +1,9 @@
-# Tailvault
+# Example Project
 
 **A Tailscale-native, content-addressed large-file store that syncs with
 `git push` / `git pull`.**
 
-`tailvault` keeps large binary files **out of git history** while keeping them in
+`example-project` keeps large binary files **out of git history** while keeping them in
 lockstep with your normal git workflow. The real bytes live in a content-addressed
 folder on a **Tailscale node** (e.g. a home Raspberry Pi with a USB3 SSD); the git
 repo carries only small **pointer files** and a committed **lock file**. It is a
@@ -20,10 +20,10 @@ The headline guarantees:
   **hard-fails loudly** if the node is down or an expected blob is missing — a
   green `git push` means the bytes actually landed on storage.
 
-> **Status — v0.0.107, under active phased development.** The CLI is implemented
+> **Status — v0.0.109, under active phased development.** The CLI is implemented
 > and test-covered through Blocks 0–4 (core workflow + multi-node federation), and
 > tagged releases ship prebuilt, checksummed binaries via Homebrew, a shell
-> installer, `go install`, and `tailvault update`. Design is frozen in
+> installer, `go install`, and `example-project update`. Design is frozen in
 > [`SPEC.md`](./SPEC.md). Personal project, pre-1.0 — installable, no stability
 > commitment yet.
 
@@ -38,19 +38,19 @@ auth (`gh auth login`, or a read-only `GITHUB_TOKEN`).
 ```sh
 # Homebrew (recommended)
 export HOMEBREW_GITHUB_API_TOKEN=$(gh auth token)
-brew install Ibtesam-Mahmood/tap/tailvault
+brew install example-org/tap/example-project
 
 # …or shell installer
-GITHUB_TOKEN=$(gh auth token) sh -c "$(curl -fsSL https://raw.githubusercontent.com/Ibtesam-Mahmood/tailvault/main/install.sh)"
+GITHUB_TOKEN=$(gh auth token) sh -c "$(curl -fsSL https://raw.githubusercontent.com/example-org/example-project/main/install.sh)"
 
 # …or go install
-go env -w GOPRIVATE=github.com/Ibtesam-Mahmood/*
-go install github.com/Ibtesam-Mahmood/tailvault/cmd/tailvault@latest
+go env -w GOPRIVATE=github.com/example-org/*
+go install github.com/example-org/example-project/cmd/example-project@latest
 
-tailvault --version        # → 0.0.107
+example-project --version        # → 0.0.107
 ```
 
-Update with `tailvault update`; uninstall with `tailvault update --uninstall`.
+Update with `example-project update`; uninstall with `example-project update --uninstall`.
 
 📖 **Full install, update, uninstall, requirements, and how to share with others
 (grant access + auth) → [`docs/install.md`](./docs/install.md).**
@@ -60,12 +60,12 @@ Update with `tailvault update`; uninstall with `tailvault update --uninstall`.
 ## Quick start (repo-managed mode)
 
 ```sh
-tailvault setup                  # register a storage node (interactive)
-tailvault init                   # write tailvault.toml + .gitattributes + hooks
-tailvault track "**/*.pdf"       # track large files by rule or path
+example-project setup                  # register a storage node (interactive)
+example-project init                   # write example-project.toml + .gitattributes + hooks
+example-project track "**/*.pdf"       # track large files by rule or path
 git add . && git commit -m "add big assets"
 git push                         # preflight + upload blobs + update lock
-tailvault status                 # local-only / pushed / drifted / orphaned
+example-project status                 # local-only / pushed / drifted / orphaned
 ```
 
 📖 **Vault/federation quick start and the full command reference →
@@ -80,7 +80,7 @@ tailvault status                 # local-only / pushed / drifted / orphaned
 | [`docs/how-it-works.md`](./docs/how-it-works.md) | The two modes, moving parts, data flow, identity, federation, features, use cases. |
 | [`docs/install.md`](./docs/install.md) | Install / update / uninstall / **share**, all channels, requirements. |
 | [`docs/commands.md`](./docs/commands.md) | Quick starts + full command reference. |
-| [`docs/configuration.md`](./docs/configuration.md) | `tailvault.toml` + `locations.toml` + state dirs. |
+| [`docs/configuration.md`](./docs/configuration.md) | `example-project.toml` + `locations.toml` + state dirs. |
 | [`docs/troubleshooting.md`](./docs/troubleshooting.md) | Error/exit codes + caveats & known issues. |
 | [`docs/distribution.md`](./docs/distribution.md) | Release pipeline + maintainer setup (private). |
 | [`docs/public-release.md`](./docs/public-release.md) | The go-public runbook. |
@@ -111,7 +111,7 @@ Work is tracked as GitHub issues **and** mirrored in [`tasks/`](./tasks/), in
 `main` stays green.
 
 ```sh
-make build       # build with embedded version → bin/tailvault
+make build       # build with embedded version → bin/example-project
 make test        # go test ./...
 make vet         # go vet ./...
 make fmt         # gofmt -l .

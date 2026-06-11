@@ -6,6 +6,19 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.109 — 2026-06-11
+
+### Docs
+- **Genericized all user-facing docs** (`README.md` + `docs/*.md`) to remove
+  personal identifiers — GitHub owner, personal node names, SSH user — and to use
+  placeholder names throughout (`example-org`, `example-project`, `node-a`/`node-b`,
+  `user`, `example-net`, `EXAMPLE_PROJECT_*`). This is a deliberate sanitization of
+  the documentation only; the code, `SPEC.md`/`DESIGN.md`, `CHANGELOG.md`, and the
+  actual binary/module/formula names are unchanged, so install commands in the docs
+  are now illustrative placeholders rather than literally runnable. Third-party
+  terms (Tailscale, tailnet) are preserved. Structured error-code identifiers
+  (`TV-*`) are left as-is since they are defined normatively in `SPEC.md`.
+
 ## v0.0.108 — 2026-06-11
 
 ### Docs

@@ -1,6 +1,6 @@
 # Error codes, exit codes & known issues
 
-How Tailvault reports failure, and the rough edges to expect from a pre-1.0 build.
+How Example Project reports failure, and the rough edges to expect from a pre-1.0 build.
 
 ---
 
@@ -12,7 +12,7 @@ reads obviously rather than as a generic git error.
 
 | Code | Meaning | Exit |
 | --- | --- | --- |
-| `TV-CFG-*` | Bad `tailvault.toml`, unknown/missing location, unparseable pointer or lock | 2 |
+| `TV-CFG-*` | Bad `example-project.toml`, unknown/missing location, unparseable pointer or lock | 2 |
 | `TV-AUTH-01` | Password missing/rejected on a mutating remote op (refused before any work) | 2 |
 | `TV-NET-01` | `tailscaled` not reachable / `tailscale` not in PATH | 3 |
 | `TV-NET-02` | Not logged into the tailnet (`tailscale up`) | 3 |
