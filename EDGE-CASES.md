@@ -507,3 +507,28 @@
   for drifted manual files, equals the recorded sha for git); the receipt's GENESIS
   still self-certifies the id (WriteReceipt refuses a genesis that doesn't mint it).
 - **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-43 (vault put — conflict, non-interactive)
+- **Edge case:** put hits a dest conflict with no `--on-conflict` flag and a
+  non-interactive stdin (piped/empty, e.g. under `go test` or a script).
+- **Decision:** chose — TV-CFG-01 at preflight, BEFORE any WAL intent or blob
+  write; nothing lands. TTY is detected on the command's input reader
+  (`cmd.InOrStdin()` char-device), not the `os.Stdin` global, so the behavior is
+  deterministic under test.
+- **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-43 (vault put — crashed-put resume)
+- **Edge case:** a put crashes mid-lifecycle and is re-run with the same
+  source + dest.
+- **Decision:** chose — a deterministic op-id (sha256 over node\0rel\0sha) is
+  re-presented on retry; the WAL returns ErrDuplicateOp and the command RESUMES
+  the interrupted op rather than minting a second identity. Result: exactly one
+  catalog entry, one ingest op marked done.
+- **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-43 (vault put — `--rm-source` safety)
+- **Edge case:** when does `--rm-source` delete the local source file?
+- **Decision:** chose — ONLY after the `b.HashObject` post-write check confirms the
+  blob is intact on the node. A failed or unverified put never removes the source
+  (never-silent-success applied to the destructive flag).
+- **Follow-up:** none

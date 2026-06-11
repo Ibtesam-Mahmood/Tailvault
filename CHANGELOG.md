@@ -6,6 +6,21 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.81 — 2026-06-11
+
+### Added
+- **`vault put` — remote ingest with full WAL lifecycle (SPEC v2 §10, task-43).**
+  `tailvault vault put <local-file> <location>/<dest>` ingests a local file into a
+  federated location with no repo checkout. Ordered lifecycle: parseTarget → local
+  Stat preflight → readCatalog (nil → TV-CFG-01 not-initialised) → hashLocalFile →
+  resolvePutConflict (BEFORE any write) → WAL AppendIntent → Put `objects/<sha>` →
+  catalog Upsert + PutOverwrite → MarkDone → HashObject post-check → optional
+  `--rm-source`. Flags `--on-conflict={copy|rename|stop}`, `--rename-to`,
+  `--rm-source`, `--json`. Ingested files land `sync_mode = manual`. Ingestion is
+  NOT password-gated (rides tailnet-ACL + SSH, per DEV-46.7); a deterministic op-id
+  gives crash-safe resume (a retried put re-presents the same id → WAL dedups →
+  the interrupted op completes without minting a second identity).
+
 ## v0.0.80 — 2026-06-11
 
 Phase 4 (test-doc) — record why restore-identity's PartialView→refuse test lives in task-50.
