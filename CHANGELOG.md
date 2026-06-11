@@ -6,6 +6,21 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.99 — 2026-06-11
+
+### Added
+- **`SetTestBackendFor` test seam — CLI-driven tests honor the harness's `SetDown`.**
+  The §16 / reachability task-50 scenarios must drive the REAL CLI (7b), but
+  `backendForLocation` builds its own taildrive backend from locations.toml and can't
+  see the fedtest harness's `SetDown`. This adds a test seam (parallel to the blessed
+  `SetTestGateVerifier`): a nil-in-production `testBackendFor` override that supplies a
+  down-aware backend by name. Because `memberProbe`'s reachability check ALSO routes
+  through `backendForLocation`, the single seam makes a CLI-driven command honor
+  `SetDown` end-to-end (data ops + reachability). Same safety contract as the gate
+  seam: **nil seam ⇒ production behavior byte-for-byte unchanged**; a declining seam
+  falls back to production. Test-only setter (no production/env path). The harness
+  half (`Fed` exposing a name→backend lookup) is coder-b's.
+
 ## v0.0.98 — 2026-06-11
 
 ### Added

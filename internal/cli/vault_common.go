@@ -106,10 +106,33 @@ func locationBackend(name string) (backend.Backend, locations.Location, error) {
 	return b, loc, err
 }
 
+// testBackendFor is a TEST SEAM (nil in production). When installed via
+// SetTestBackendFor, backendForLocation returns the override it yields for a
+// location by name. Because EVERY command's data access AND memberProbe's
+// reachability check route through backendForLocation, this single seam lets the
+// fedtest harness supply a down-aware backend (m.Backend()) so a CLI-driven
+// command honors harness SetDown end-to-end — the reachability scenarios must
+// drive the REAL CLI (7b), and the CLI's own taildrive construction can't see
+// SetDown otherwise. Returning (nil, false) for a name leaves production
+// construction in force. nil seam ⇒ production behavior is byte-for-byte unchanged.
+var testBackendFor func(loc locations.Location, name string) (backend.Backend, bool)
+
+// SetTestBackendFor installs (or clears, with nil) the test backend seam.
+// TEST-ONLY: production never calls it; when nil, backendForLocation builds the
+// real ssh/taildrive backend exactly as before.
+func SetTestBackendFor(fn func(loc locations.Location, name string) (backend.Backend, bool)) {
+	testBackendFor = fn
+}
+
 // backendForLocation constructs a Backend from a registered location, rooted at
 // its base_path (no subpath — federation member vaults are browsed at their own
 // root). Mirrors resolveBackend's per-backend construction.
 func backendForLocation(loc locations.Location, name string) (backend.Backend, error) {
+	if testBackendFor != nil {
+		if b, ok := testBackendFor(loc, name); ok {
+			return b, nil // harness-supplied (down-aware) backend
+		}
+	}
 	switch loc.Backend {
 	case locations.BackendSSH:
 		if loc.User == "" {
