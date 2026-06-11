@@ -114,6 +114,22 @@ func (s *SSH) Get(ctx context.Context, key string, w io.Writer) error {
 	return nil
 }
 
+// Exec runs an arbitrary command ON the node over the SSH channel, piping in to
+// its stdin and capturing stderr. It is the seam for node-side helpers — e.g.
+// `tailvault node verify-passwd`, whose exit status authorizes a mutating op —
+// distinct from the object operations. A nil error means the remote command
+// exited 0; a non-nil error carries the captured stderr so the caller can
+// classify the remote exit (e.g. a TV-AUTH-01 rejection vs an ssh-level
+// failure). preflight maps an unreachable node to TV-NODE-01 before anything
+// runs. The bytes written to in never touch local disk and only the exit status
+// (not stdout) is relied upon, so a node-side secret check leaks nothing back.
+func (s *SSH) Exec(ctx context.Context, in io.Reader, remoteCmd string) (stderr []byte, err error) {
+	if perr := s.preflight(ctx); perr != nil {
+		return nil, perr
+	}
+	return s.ssh(ctx, in, nil, remoteCmd)
+}
+
 // HashObject runs `sha256sum` on the node and returns only the 64-hex digest —
 // the blob bytes never cross the tailnet (the DEV-C1 / GH-2 short-circuit). It
 // mirrors Get's missing-vs-failure classification: an explicit `[ -f ]` test
@@ -262,3 +278,8 @@ func isLowerHex(s string) bool {
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
+
+// ShellQuote exposes shellQuote so command-layer code building a remote command
+// for Exec (e.g. the node-side password verifier) can quote arguments with the
+// SAME escaping the backend uses internally.
+func ShellQuote(s string) string { return shellQuote(s) }

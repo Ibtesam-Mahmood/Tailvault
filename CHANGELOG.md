@@ -6,6 +6,18 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.60 — 2026-06-11
+
+Phase 4 (task-46 part 2b-i) — SSH node-side password verifier. Satisfies qa-review's
+part-2 forward gate (node-side SSH verification). task-46/#16 still open (part 2b-ii =
+`vault passwd` command + WAL-logging + enforcement audit).
+
+- `internal/backend`: `(*SSH).Exec` remote-exec seam (pipes stdin, captures stderr) +
+  exported `ShellQuote`.
+- `internal/cli/vault_auth.go`: `sshVerifier` (satisfies `auth.Verifier`) runs
+  `tailvault node verify-passwd` over SSH, candidate piped VERBATIM, hash never leaves
+  the node. Exit 0 = match; TV-AUTH-01 = reject/ErrNoPassword; unreachable → TV-NODE-01.
+
 ## v0.0.59 — 2026-06-11
 
 Phase 3 (task-33/34 review fix, SG-3/F4) — wire `wal.ErrChainBroken` →
