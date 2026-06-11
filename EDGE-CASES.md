@@ -349,3 +349,25 @@
   (intent) move on the id → PendingMove; a still-held id (catalog FindID hit)
   → Found wins even with a pending move (source readable until the move completes).
 - **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-41 (vault ls/stat)
+- **Edge case:** `vault ls` of a path that resolves to nothing while ≥1 roster member
+  is unreachable — could look like an authoritative empty folder.
+- **Decision:** chose — return TV-FED-01 (exit 6), NOT an empty listing. We cannot
+  prove the folder is empty when a member's catalog is unreadable (partial view).
+- **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-41 (vault ls/stat)
+- **Edge case:** offline members in `vault ls` — show stale data or omit them?
+- **Decision:** chose — backfill offline members from the advisory cache, clearly
+  marked "cached"/"last seen", never presented as live (D26); offline + no cached
+  state → "no cached state". The live probe alone decides reachability.
+- **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-41 (vault ls/stat)
+- **Edge case:** `vault stat --check` finds a manual-ingest file differs from its
+  last-scanned hash.
+- **Decision:** chose — report "drifted since last scan", NEVER "corrupt" (H12:
+  content-addressed-corruption is verify's verdict, not stat's; manual files drift
+  legitimately).
+- **Follow-up:** none

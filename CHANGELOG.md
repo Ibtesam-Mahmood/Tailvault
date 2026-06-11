@@ -6,6 +6,23 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.67 — 2026-06-11
+
+Phase 4 (task-41) — `vault ls` + `vault stat` (SPEC v2 §11/§13/§14/§15). The first
+federated read commands, attached to the `vault` group (init, scan, **stat, ls**).
+
+- `vault stat <path|id>`: resolve via `fed.Resolver` (BackendQuerier + member probe)
+  → exact §15 boundary map (PartialView→TV-FED-01 exit 6, Missing→TV-OBJ-01 exit 5,
+  FoundElsewhere→success+heal WARN, ErrChainBroken→TV-FED-03 exit 6); prints id/path/
+  home/sync_mode/size/sha/timestamps + reachability; `--check` (HashObject on home →
+  fresh/drifted, never "corrupt" — H12), `--json`.
+- `vault ls [loc[/path]]`: fan out roster.Active() via probe, read each reachable
+  member's catalog; offline members backfilled from advisory cache (marked "cached",
+  never live, D26); empty path-result with ≥1 member unreachable → TV-FED-01 (exit 6).
+- Shared `vault_common.go` seams (backendForRegistry/memberProbe/resolveOutcome/
+  parseTarget/loadRoster/readCatalog) reused by tasks 42/44/45. Reads NEVER
+  password-gated (§16). 5 DEVIATIONS + 3 EDGE-CASES (see PR).
+
 ## v0.0.66 — 2026-06-11
 
 Phase 4 (SG-6 gc test coverage) — adds `TestPersistCatalogOverBackend_Overwrites`,
