@@ -6,6 +6,15 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.104 — 2026-06-11
+
+### Fixed
+- **Restore the dropped `## v0.0.102` (FED-LOOKUP-1) changelog entry.** The task-50
+  squash-merge (61a1357) rewrote CHANGELOG.md and omitted the v0.0.102 section
+  (VERSION was 0.0.103 but the changelog jumped 103 → 101). This restores the
+  v0.0.102 FED-LOOKUP-1 entry verbatim (recovered from `d453aaa:CHANGELOG.md`) so
+  the changelog is monotonic again. No source change — release-integrity only.
+
 ## v0.0.103 — 2026-06-11
 
 ### Added
@@ -37,6 +46,8 @@ All notable changes to Tailvault are documented here. The format follows
   init entry, independent of the live WAL tail (not an empty-WAL precondition).
 
 This completes the Blocks 3–4 federation feature set (tasks 27–50).
+
+## v0.0.102 — 2026-06-11
 
 ### Fixed
 - **`vault stat|get|mv <id>` no longer reports a silent miss under a partial view
