@@ -6,6 +6,25 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.76 — 2026-06-11
+
+Phase 4 (task-42) — `vault get` (federated download + self-certifying pull receipts).
+
+- `internal/cli/vault_get.go`: `vault get <logical-path|id> [-o out] [--force]
+  [--no-receipt] [--json]` — parseTarget → fileByPath/fileByIDPrefix →
+  `fed.Resolver.Resolve` (stat wiring) → resolveOutcome boundary map (PartialView→
+  TV-FED exit6, Missing→TV-OBJ exit5, FoundElsewhere→success+heal warn,
+  ErrChainBroken→TV-FED-03 exit6). Reads are NEVER gated (§16).
+- **Streaming integrity:** `downloadVerified` tees the object through sha256 into a
+  temp in the DEST dir (one pass, constant memory), fsyncs, verifies BEFORE the atomic
+  rename. git-mode digest mismatch → hard TV-OBJ exit5 with no bytes at dest
+  (never-silent-success); manual-mode mismatch delivers the node's current bytes +
+  exit0 + freshness notice (H12 — drift is legitimate, not corruption).
+- **Pull receipt:** `identity.WriteReceipt` with `SHA256AtPull` = the delivered digest
+  (truthful for drifted manual files); genesis still self-certifies the id. Written
+  only AFTER the dest rename succeeds; `--no-receipt` skips. Local overwrite guard:
+  existing dest without `--force` → TV-CFG-01, dest untouched.
+
 ## v0.0.75 — 2026-06-11
 
 Phase 4 (task-37) — `ops` command (pending-op sweep + retry across the federation).

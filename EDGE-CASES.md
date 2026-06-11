@@ -483,3 +483,27 @@
   backend.PutOverwrite and so works over ANY backend. Remote-member ingest replay
   lands when SSH bootstrap does.
 - **Follow-up:** GH/Block-7 candidate — remote-member ingest-family replay (SSH).
+
+- **Date / Task:** 2026-06-11 / task-42 (vault get — corrupt git blob)
+- **Edge case:** `get` of a git-mode file whose stored object doesn't hash to the
+  recorded sha.
+- **Decision:** chose — hard integrity fail → TV-OBJ (exit 5); the dest-dir temp is
+  removed and NO dest file is written (a corrupt download never lands; never-silent-
+  success). Streaming tee-hash verifies BEFORE the atomic rename.
+- **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-42 (vault get — drifted manual file)
+- **Edge case:** `get` of a manual-mode file that drifted since the last scan
+  (stored bytes ≠ recorded sha).
+- **Decision:** chose — exit 0, deliver the node's CURRENT bytes (the truth being
+  fetched), and print "content has changed since last scan <last_scanned>" (H12 —
+  drift on a manual file is legitimate; verify judges corruption, get does not).
+- **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-42 (vault get — pull receipt truthfulness)
+- **Edge case:** what digest does the pull receipt record, and when is it written?
+- **Decision:** chose — receipt written ONLY after the dest rename succeeds (never
+  implying possession the user lacks); `SHA256AtPull` = the delivered digest (truthful
+  for drifted manual files, equals the recorded sha for git); the receipt's GENESIS
+  still self-certifies the id (WriteReceipt refuses a genesis that doesn't mint it).
+- **Follow-up:** none
