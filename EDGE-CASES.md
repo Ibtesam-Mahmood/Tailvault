@@ -690,3 +690,39 @@
   `git→manual` makes gc skip the blob forever (re-asserted via gc.PlanFederated).
   Unknown mode → TV-CFG-01; same mode → idempotent no-op.
 - **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-47 (fed join — all-or-nothing gating)
+- **Edge case:** a `fed join` fan-out where one target's password is wrong.
+- **Decision:** chose — every reachable target is password-gated BEFORE any roster
+  write, so a single wrong password leaves the roster untouched EVERYWHERE (no
+  partial roster). Unreachable members are reported pending (converge on next
+  contact / `ops retry`), not failed.
+- **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-47 (fed leave — keeps the row)
+- **Edge case:** what happens to a leaving member's roster row + data.
+- **Decision:** chose — `fed leave` marks self `left` across all rosters (the row is
+  KEPT, documenting the detach, D28); NO data is deleted (the leaver's disk is
+  untouched); referencing repos get the lock-v2 WARN on next pull. Idempotent
+  (already-left → no-op success).
+- **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-47 (fed evict — refuses a reachable member)
+- **Edge case:** evicting a member that is actually still alive.
+- **Decision:** chose — `fed evict` refuses a member that answers a live ping (tells
+  the user to run `fed leave` on it instead); it evicts ONLY a member that fails the
+  ping. If an evicted member later returns, the roster's `evicted` status wins via
+  fed.Merge's status rank (re-join cleanly); `status` flags the divergence meanwhile.
+- **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-47 (fed_id determinism)
+- **Edge case:** §13 says fed_id = sha256 of the seq-0 genesis WAL entry, but a real
+  vault is init'd (and may hold ingest ops) before `fed init` runs — its WAL tail is
+  not seq 0.
+- **Decision:** chose — fed_id is derived from a CANONICALLY-CONSTRUCTED seq-0 roster
+  entry (seq 0, prev=ZeroHash, founding member's args) via wal.Hash, so it is
+  well-defined regardless of the WAL's actual length; the REAL roster op is appended
+  at the WAL's actual seq. Flagged for the task-27/SPEC owner: if §13 intends fed init
+  to REQUIRE an empty WAL, that precondition can be added (DEVIATION 2).
+- **Follow-up:** task-27/SPEC-owner confirm §13 intent (empty-WAL precondition vs
+  constructed-derivation).

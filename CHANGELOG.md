@@ -6,6 +6,26 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.87 — 2026-06-11
+
+### Added
+- **`fed` membership CLI — init/join/leave/evict/status (SPEC v2 §13/§16, task-47).**
+  - `fed init <location>` mints a federation around an existing unfederated location;
+    `fed_id = wal.Hash` of the canonical seq-0 roster genesis entry; roster = {self};
+    NOT gated (bootstrap — no password can exist yet); refuses if already federated.
+  - `fed join <location> [--via m]` fans a roster-add to every existing member, each
+    write gated by THAT member's password; **all-or-nothing on the reachable set**
+    (every reachable target gated before any write → a wrong password leaves the
+    roster untouched everywhere); unreachable members reported pending. Idempotent.
+  - `fed leave <location>` clean detach (D28): marks self `left` across every roster
+    (row KEPT, no data deleted), prints the repush/resync consequence loudly.
+  - `fed evict <member>` password-gated retire of a DEAD node; refuses a member that
+    answers a live ping (use `fed leave`). Idempotent.
+  - `fed status` read-only dashboard (roster incl. left/evicted, per-member
+    reachability, cache last-seen, pending-op counts, divergence note; `--json`).
+  All roster writes run the OpRoster WAL lifecycle (deterministic op id), replacing
+  ONLY the `[federation]` section so each member's files are preserved.
+
 ## v0.0.86 — 2026-06-11
 
 ### Fixed
