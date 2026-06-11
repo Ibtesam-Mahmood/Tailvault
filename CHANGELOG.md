@@ -6,6 +6,15 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.112 — 2026-06-11
+
+### Docs
+- **`README.md`: added a "How it works at a glance" section** with four Mermaid
+  diagrams (architecture, two modes, repo-managed data flow, federation) rendered
+  natively by GitHub, plus a row of status badges at the top (version, Go,
+  Tailscale-native, git-native, platform, status). The version badge is static
+  and tracks `VERSION` — bump it alongside any release.
+
 ## v0.0.111 — 2026-06-11
 
 ### Docs

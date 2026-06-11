@@ -1,5 +1,12 @@
 # Tailvault
 
+![version](https://img.shields.io/badge/version-0.0.112-1f6feb)
+![Go](https://img.shields.io/badge/Go-1.26%2B-00ADD8?logo=go&logoColor=white)
+![Tailscale](https://img.shields.io/badge/Tailscale-native-242424?logo=tailscale&logoColor=white)
+![git](https://img.shields.io/badge/git--native-filters%20%2B%20hooks-F05032?logo=git&logoColor=white)
+![platform](https://img.shields.io/badge/platform-linux%20%7C%20macOS-555)
+![status](https://img.shields.io/badge/status-active%20development-orange)
+
 **A Tailscale-native, content-addressed large-file store that syncs with
 `git push` / `git pull`.**
 
@@ -26,6 +33,106 @@ The headline guarantees:
 > installer, `go install`, and `tailvault update`. Design is frozen in
 > [`SPEC.md`](./SPEC.md). Personal project, pre-1.0 — installable, no stability
 > commitment yet.
+
+---
+
+## How it works at a glance
+
+Your laptop clone stays lean: git holds only tiny **pointer files** + a committed
+**`tailvault.lock`**. The real bytes live content-addressed on a Tailscale
+**storage node**, reached over your tailnet — no cloud, no public exposure, no
+API keys. Clean/smudge **filters** swap bytes ⇄ pointers in the working tree;
+git **hooks** move the real bytes on `push` / `pull`.
+
+```mermaid
+flowchart LR
+    subgraph laptop["💻 Laptop clone (lean)"]
+        wt["working tree<br/>real bytes"]
+        repo["git repo<br/>pointers + tailvault.lock"]
+        wt <-- "clean / smudge filter" --> repo
+    end
+    subgraph node["🗄️ Storage node (e.g. Pi + USB3 SSD)"]
+        store["content store<br/>objects/&lt;sha256&gt;"]
+        wal["WAL<br/>(hash-chained)"]
+        cat["catalog.toml"]
+        auth["argon2id passwd"]
+        store --- wal --> cat
+        auth -. "gates mutations" .- store
+    end
+    repo == "git push / pull (hooks)<br/>🔒 over tailnet · no public exposure" ==> store
+
+    style laptop fill:#eef6ff,stroke:#1f6feb
+    style node fill:#eefbf0,stroke:#2da44e
+```
+
+### Two modes
+
+```mermaid
+flowchart TB
+    A["tailvault"] --> R["📁 Repo-managed mode<br/><i>Git-LFS-style</i>"]
+    A --> V["🌐 Vault / federation mode<br/><i>checkout-free</i>"]
+    R --> R1["files live in the git working tree"]
+    R --> R2["filters + push/pull hooks move bytes"]
+    V --> V1["files live only on storage nodes"]
+    V --> V2["put / get / ls / mv / rm across nodes"]
+    style R fill:#eef6ff,stroke:#1f6feb
+    style V fill:#fff7e6,stroke:#d29922
+```
+
+### Data flow — repo-managed mode
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as You
+    participant G as git
+    participant TV as tailvault<br/>(filters + hooks)
+    participant N as Storage node
+
+    U->>G: git add big.pdf
+    G->>TV: clean filter
+    TV-->>G: 4-line pointer<br/>(bytes set aside)
+    U->>G: git push
+    G->>TV: pre-push hook
+    TV->>N: preflight (status → ping/stat)
+    alt node down or blob missing
+        TV-->>U: ❌ hard-fail loudly<br/>(no partial upload, lock unadvanced)
+    else node reachable
+        TV->>N: upload new blobs by sha256
+        TV-->>G: update tailvault.lock
+    end
+    U->>G: git pull / checkout
+    G->>TV: smudge filter
+    TV->>N: fetch blob by sha256
+    TV-->>U: ✅ real bytes restored
+    U->>G: git rm big.pdf → push
+    TV->>N: auto-delete blob (unless preserve)
+```
+
+A **green `git push` means the bytes actually landed** — there is no silent
+success. Identity is content-independent: a file's **ID** is the `sha256` of its
+genesis record, so **moves change the path, never the ID**, and every clone's
+lock is an off-node identity backup.
+
+### Federation
+
+```mermaid
+flowchart TB
+    C["💻 Client"] -- "read fans out" --> NA & NB & NC
+    subgraph fed["One logical tree (federation)"]
+        NA["🗄️ node-a<br/><i>home</i>"]
+        NB["🗄️ node-b"]
+        NC["🗄️ node-c (offline)"]
+    end
+    NA -. "found at non-home member<br/>→ ✅ + WARN (run heal)" .-> NB
+    NC -- "can't prove absence<br/>→ exit 6, never a false miss" --- C
+    style NC fill:#fdecea,stroke:#cf222e,stroke-dasharray:4 4
+    style fed fill:#f6f8fa,stroke:#8b949e
+```
+
+Reads are **reachability-aware**: a genuinely missing file is exit `5`, but an
+unprovable absence behind an offline member is exit `6` — never a false miss.
+Destructive all-member ops (`gc`) **refuse** to run while any member is offline.
 
 ---
 
