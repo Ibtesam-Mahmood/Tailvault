@@ -20,7 +20,7 @@ The headline guarantees:
   **hard-fails loudly** if the node is down or an expected blob is missing — a
   green `git push` means the bytes actually landed on storage.
 
-> **Status — v0.0.109, under active phased development.** The CLI is implemented
+> **Status — v0.0.110, under active phased development.** The CLI is implemented
 > and test-covered through Blocks 0–4 (core workflow + multi-node federation), and
 > tagged releases ship prebuilt, checksummed binaries via Homebrew, a shell
 > installer, `go install`, and `example-project update`. Design is frozen in
@@ -31,26 +31,33 @@ The headline guarantees:
 
 ## Install
 
-All channels resolve to the same signed, checksummed GitHub Release, so install
-and update are the same action. **This repo is private**, so installs need GitHub
-auth (`gh auth login`, or a read-only `GITHUB_TOKEN`).
+**Homebrew is the recommended path** — pick **one** channel; they all resolve to
+the same signed, checksummed GitHub Release, so install and update are the same
+action. **This repo is private**, so installs need GitHub auth (`gh auth login`,
+or a read-only token).
 
 ```sh
-# Homebrew (recommended)
-export HOMEBREW_GITHUB_API_TOKEN=$(gh auth token)
+export HOMEBREW_GITHUB_API_TOKEN=$(gh auth token)   # private-repo auth; omit when public
 brew install example-org/tap/example-project
-
-# …or shell installer
-GITHUB_TOKEN=$(gh auth token) sh -c "$(curl -fsSL https://raw.githubusercontent.com/example-org/example-project/main/install.sh)"
-
-# …or go install
-go env -w GOPRIVATE=github.com/example-org/*
-go install github.com/example-org/example-project/cmd/example-project@latest
-
-example-project --version        # → 0.0.107
+example-project --version
 ```
 
-Update with `example-project update`; uninstall with `example-project update --uninstall`.
+Update with `brew upgrade example-project`; uninstall with `brew uninstall example-project`.
+
+<details>
+<summary><b>Prefer not to use Homebrew?</b> You only need one of these instead.</summary>
+
+```sh
+# shell installer (servers / CI / no Homebrew)
+GITHUB_TOKEN=$(gh auth token) sh -c "$(curl -fsSL https://raw.githubusercontent.com/example-org/example-project/main/install.sh)"
+
+# go install (Go devs)
+go env -w GOPRIVATE=github.com/example-org/*
+go install github.com/example-org/example-project/cmd/example-project@latest
+```
+
+Then `example-project update` self-updates; `example-project update --uninstall` removes it.
+</details>
 
 📖 **Full install, update, uninstall, requirements, and how to share with others
 (grant access + auth) → [`docs/install.md`](./docs/install.md).**

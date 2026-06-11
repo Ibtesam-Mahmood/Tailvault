@@ -6,6 +6,14 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.110 — 2026-06-11
+
+### Docs
+- **README Install section reworked to make Homebrew the headline path.** The
+  three channels were previously one block of `# …or` comments that read like
+  sequential steps; they're now a prominent Homebrew block plus a collapsed
+  "Prefer not to use Homebrew?" section making clear you only need one channel.
+
 ## v0.0.109 — 2026-06-11
 
 ### Docs
