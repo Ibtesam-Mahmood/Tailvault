@@ -6,6 +6,18 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.95 — 2026-06-11
+
+### Added
+- **Gate-aware §16 audit (fix #43 part 2 / 46.C).** A static call-analysis test
+  (`auth_gate_aware_test.go`) parses the cli package, computes the transitive
+  "reaches `gateLocation`" set over the run/helper funcs, and asserts every command
+  constructor calls `markGated` ⟺ its RunE reaches `gateLocation`. This catches the
+  bug class the marker-only audit could not: annotate-without-gate AND
+  gate-without-annotate (the gc 46.A and rebuild-catalog 46.C cases). Verified to
+  fail with a precise message if a gated command loses its annotation. With gc now
+  gated+annotated and rebuild-catalog annotated, the audit passes at integration.
+
 ## v0.0.94 — 2026-06-11
 
 ### Fixed
