@@ -6,6 +6,22 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.51 — 2026-06-11
+
+Phase 3 (task-29) — `internal/wal`: hash-chained per-node WAL, WAL-as-lock, pruning
+(SPEC v2 §10). Rebased onto the task-40 `Backend.HashObject` interface.
+
+- `wal.Entry`/`Log` with `Read`/`AppendIntent`/`MarkDone`/`MarkFailed`/`Pending`/`Prune`;
+  immutable intent entries (DG-27.2, no state field — state is marker-derived via `wal.Rec`);
+  slot filename `<seq>.toml` with op_id inside (DG-29.1, preserves Put-dedup first-writer-wins).
+- Hash chain verifies over RAW on-disk bytes; `wal.Encode` is now EXPLICIT byte construction
+  (not `toml.Marshal`) so chain/fed_id hashes cannot drift on a go-toml bump. New frozen
+  vector `bb55bed5…93cbc3` (SPEC §10 + testdata).
+- **Crash-safety fix (closes review F1 / task #34):** `Prune` uses forward-only anchor markers
+  `meta/wal/pruned/<seq>` (put-a-new-key, never delete-then-put), so a crash mid-prune cannot
+  brick the chain. New `TestPruneForwardOnlyAnchor`.
+- SPEC nits folded: N1 (op_id prose "UUID" not "UUIDv4"), N3 (§13 fed_id vs §11 file-ID clarifier).
+
 ## v0.0.50 — 2026-06-11
 
 Phase 4 (task-46 follow-up) — `WriteHashFile` now fsyncs the parent directory after

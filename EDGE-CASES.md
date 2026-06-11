@@ -33,6 +33,61 @@
   intent. (DG-27.2; binds task-29.)
 - **Follow-up:** none
 
+- **Date / Task:** 2026-06-11 / task-29 (internal/wal) [review-29 response]
+- **Edge case:** WAL entry bytes feed the hash CHAIN + fed_id, so rendering them
+  with a TOML marshaler (go-toml/v2) means a future library bump could silently
+  change on-disk chain hashes → spurious TV-FED-03 on real data (not just tests).
+- **Decision:** chose — `wal.Encode` is now EXPLICIT byte construction (like §11
+  genesis), not `toml.Marshal`: fixed field order, LF, double-quoted basic strings,
+  bare RFC3339Nano datetime, sorted args keys, args table last/omitted-when-empty.
+  Still valid TOML (Decode reads it). New frozen hash vector
+  `bb55bed5…93cbc3`; SPEC §10 + testdata updated. (qa-review review-29 gate.)
+- **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-29 (internal/wal) [fix: prune-anchor atomicity]
+- **Edge case:** the original `Prune` did `Delete(meta/wal/PRUNED)` then
+  `Put(PRUNED)` (Put can't overwrite a dedup key). A crash in that window leaves
+  NO anchor while surviving entries start at seq>0 → verifyChain expects genesis
+  seq-0/ZeroHash → ErrChainBroken → the WAL is bricked.
+- **Decision:** chose — anchors are now **forward-only markers**
+  `meta/wal/pruned/<seq>`; the effective anchor is the highest-seq marker.
+  Advancing = a single `Put` of a NEW key BEFORE any deletes; the live anchor is
+  never deleted before its successor exists, so a crash can never leave the chain
+  anchorless. Superseded markers are best-effort cleaned up after the new one is
+  durable. (Resolves the QA "prune can brick the WAL" finding.)
+- **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-29 (internal/wal)
+- **Edge case:** WAL-as-lock needs an atomic "claim seq N" primitive, but task-27
+  sketched the entry filename as `<seq>-<op_id>.toml` — which puts the op id in the
+  NAME, so two racers at the same seq write DIFFERENT keys and backend Put-dedup
+  (per-key) cannot arbitrate. The task's own race rule ("Put dedup means first
+  write sticks") only works if racers share a key.
+- **Decision:** chose — froze the slot filename as `<seq>.toml` with op_id INSIDE
+  the file (DG-29.1). The slot file is the lock claim; dedup makes the first writer
+  stick; a loser reads back a different op_id and retries at the next seq; a
+  same-blob loser is caught by the pending-intent check → ErrOpInFlight. Markers
+  keyed by seq (`<seq>.done`/`.failed`). Updated SPEC §10.
+- **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-29 (internal/wal)
+- **Edge case:** true multi-writer safety needs the backend's Put to be
+  create-exclusive (O_EXCL). FSBackend's Stat-then-write is first-writer-wins only
+  when calls are serialized; under genuinely parallel access two Puts of one key
+  can both rename (last wins). SSH backend (temp+mv) has the same property.
+- **Decision:** worked-around — tests serialize backend calls (syncBackend) to
+  model one-client-over-SSH; matches the early single-active-writer assumption
+  (Q3/D12). A create-exclusive backend Put is the real fix.
+- **Follow-up:** Block 5 / GH candidate (backend create-exclusive for N>1 writers).
+
+- **Date / Task:** 2026-06-11 / task-29 (internal/wal)
+- **Edge case:** TOCTOU — a key returned by backend.List can be Deleted by a
+  concurrent Prune (or loser-cleanup) before Get reads it, surfacing TV-OBJ-01 and
+  failing an otherwise-valid read.
+- **Decision:** chose — getMaybe treats backend.ErrNotExist on a listed key as
+  "skip" (gone), not an error. Verified under `go test -race -count=5`.
+- **Follow-up:** none
+
 - **Date / Task:** 2026-06-11 / task-27 (SPEC v2 freeze)
 - **Edge case:** genesis-record canonical form must be byte-exact or every file
   ID changes; "use a TOML encoder" is non-deterministic across libraries.

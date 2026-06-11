@@ -429,71 +429,99 @@ of the file means "track everything" on bootstrap.
 Every storage node keeps its own hash-chained write-ahead log under
 `<base_path>/<subpath>/meta/wal/`. The federated layer is **stateless** — a node's
 WAL is the only record of its own ops (D6). One TOML file per entry, named
-`<seq>-<op_id>.toml` where `<seq>` is **zero-padded to 12 digits**
-(`000000000001-<op_id>.toml`). Appending an entry is an **atomic `Put` of a new
-key** (temp + fsync + rename) — never an in-place edit of an existing entry.
+`<seq>.toml` where `<seq>` is **zero-padded to 12 digits** (`000000000001.toml`).
+Appending an entry is an **atomic `Put` of the next-seq key** (temp + fsync +
+rename) — never an in-place edit of an existing entry.
+
+> **Slot filename freeze (DG-29.1).** The op id lives **inside** the entry, NOT
+> in the filename, so that two clients racing the same seq write the **same key**
+> — backend `Put` dedup then makes the first write stick (the slot file *is* the
+> per-blob lock claim). A loser reads the slot back, sees a different `op_id`, and
+> retries at the next seq; a same-blob loser is caught by the pending-intent check
+> and gets `TV-FED`/`op-in-flight`. (Task-27's brief sketched `<seq>-<op_id>.toml`,
+> but that name defeats the very dedup its own race-resolution rule relies on, so
+> v2 freezes `<seq>.toml`. Markers are keyed by seq for the same reason.) True
+> multi-writer safety additionally requires the backend's `Put` to be
+> create-exclusive; early operation assumes a single active writer (Q3/D12).
 
 ### Entry fields
 
 | Field | Type | Notes |
 |---|---|---|
 | `seq` | int | monotonic per node, starting at `0` for the genesis entry. |
-| `op_id` | string | UUIDv4, lowercase hex (no dashes). Unique → idempotent retry/dedupe. |
+| `op_id` | string | UUID, lowercase hex, no dashes (minted by `wal.NewOpID`; bootstrap derives a deterministic one — DG-29). Unique → idempotent retry/dedupe. Sample values are illustrative. |
 | `prev_hash` | string | 64-hex sha256 over the **canonical on-disk bytes of the previous entry**. The genesis entry (`seq = 0`) uses **64 zeros**. |
 | `op_type` | string | one of `ingest` \| `move` \| `delete` \| `sync_mode` \| `gc` \| `roster` \| `scan`. |
-| `args` | table | op-typed argument table (shape defined by the op; e.g. `move` carries `from`/`to`/`moved_to`). |
 | `blob_refs` | []string | file **IDs** (§11) this op locks — the basis of WAL-as-lock (D12). |
-| `state` | string | always written as `"intent"` (see immutability rule). |
 | `actor` | string | identity from `tailscale whois`, falling back to git `user.email` (§6 Q7). |
 | `created_at` | string | RFC3339 UTC `Z`. |
-| `updated_at` | string | RFC3339 UTC `Z`; equals `created_at` at write time and is **never rewritten** (see immutability rule). |
+| `args` | table | op-typed argument table (shape defined by the op; e.g. `move` carries `from`/`to`/`moved_to`). Emitted last (TOML tables follow scalars). |
+
+> **No `state`/`updated_at` in the entry (DG-27.2).** The persisted entry is
+> immutable so the hash chain never re-hashes; it therefore carries no mutable
+> state. Effective state lives entirely in sibling markers (below).
 
 ### Hash-chain rule (normative)
 
 Each entry's hash is `sha256` over its **entire canonical serialized bytes**
 (excluding nothing). `prev_hash` links entry *n* to entry *n−1*. Any reader
-replaying the chain MUST verify **every** link and **fail** on the first break
-(tamper-evident, D17) → **`TV-FED-03`**, exit bucket 6. The canonical byte form
-of a WAL entry (deterministic field order, LF endings) is frozen by **Task 29**,
-which MUST publish a worked hash test vector alongside its implementation.
+replaying the chain MUST verify **every** link (and seq contiguity) and **fail**
+on the first break (tamper-evident, D17) → **`TV-FED-03`**, exit bucket 6.
+
+The canonical byte form is `wal.Encode`, produced by **explicit byte
+construction** — NOT a TOML marshaler. This is load-bearing: these bytes feed the
+hash chain (and `fed_id`), so the serialization must be byte-stable forever and
+independent of any library's rendering (a go-toml bump must never silently change
+an on-disk chain → spurious `TV-FED-03`). The output is still valid TOML (Decode
+reads it back). Frozen format: fixed field order, LF endings, **double-quoted
+basic strings** with TOML escaping, `blob_refs` as an inline array, `created_at`
+as a **bare RFC3339Nano UTC** datetime, the `args` table **last with sorted keys**
+(omitted entirely when empty). **Frozen hash test vector** (Task 29 reproduces it
+byte-for-byte): the genesis sample below hashes to
+`bb55bed553d0ba5a797d2dbca8a041a073b7481fea5cf5fcb4f735979793cbc3`.
 
 ### Immutability + state markers (normative — do NOT simplify to in-place edits)
 
 The entry file is **immutable** once written, so the chain never re-hashes on a
-state change. Its `state` is always `"intent"` and its `updated_at` equals
-`created_at`. A terminal transition is recorded by writing a **sibling marker
-file** next to the entry:
+state change. A terminal transition is recorded by writing a **sibling marker
+file** keyed by seq:
 
-- `<seq>-<op_id>.done` — op completed.
-- `<seq>-<op_id>.failed` — op failed (surfaces in `ops`, retryable).
+- `<seq>.done` — op completed.
+- `<seq>.failed` — op failed (surfaces in `ops`, retryable).
 
-Each marker is a small TOML: `{ op_id, seq, state ("done"|"failed"), at (RFC3339
-UTC Z) }`. The **effective state** of an op = the marker's state if a marker
-exists, else `intent`. Write-ahead ordering (proposal Part II atomicity
-standards): WAL intent → blob bytes → catalog → WAL `.done` marker; a crash
-anywhere is detectable and repairable by `verify`/`heal`. Done entries are pruned
-by journal gc (H9) — pruning removes an entry only when its `.done` marker exists
-AND no later entry's `prev_hash` still needs it for chain continuity (Task 29
-freezes the exact pruning rule).
+Each marker is a small TOML: `{ seq, op_id, state ("done"|"failed"), at (RFC3339
+UTC Z), reason? }`. The **effective state** of an op = the marker's state if a
+marker exists (done wins over failed), else `intent`. Write-ahead ordering
+(proposal Part II atomicity standards): WAL intent → blob bytes → catalog → WAL
+`.done` marker; a crash anywhere is detectable and repairable by `verify`/`heal`.
 
-### Sample genesis entry (verbatim)
+Done entries are pruned by journal gc (H9): `Prune` removes the **leading run** of
+done entries older than a `keep` window and records the last pruned entry's
+`{seq, hash}` as a **forward-only anchor marker** `meta/wal/pruned/<seq>`, so the
+surviving chain still anchors and verifies. The effective anchor is the
+**highest-seq** marker. Advancing the anchor is a single `Put` of a NEW key
+(the live anchor is never deleted before its successor exists), so a crash during
+`Prune` can never leave the chain anchorless. `Prune` never prunes intent/failed
+entries (it stops at the first non-done-or-recent entry), and a reader ignores any
+entry at or below the effective anchor seq (crash-safe: the anchor is written
+before the old files are deleted).
+
+### Sample genesis entry (canonical `wal.Encode` form — used as the test vector)
 
 ```toml
-seq        = 0
-op_id      = "0192f3a4b5c6d7e8f9a0b1c2d3e4f5a6"
-prev_hash  = "0000000000000000000000000000000000000000000000000000000000000000"
-op_type    = "ingest"
-blob_refs  = ["30092d830e2641b447745655bbe4171675720a1aa8cf80e0ae3736e6e43111f0"]
-state      = "intent"
-actor      = "ibte@laptop"
-created_at = "2026-06-11T09:10:00Z"
-updated_at = "2026-06-11T09:10:00Z"
+seq = 0
+op_id = "0192f3a4b5c6d7e8f9a0b1c2d3e4f5a6"
+prev_hash = "0000000000000000000000000000000000000000000000000000000000000000"
+op_type = "ingest"
+blob_refs = ["30092d830e2641b447745655bbe4171675720a1aa8cf80e0ae3736e6e43111f0"]
+actor = "ibte@laptop"
+created_at = 2026-06-11T09:10:00Z
 
 [args]
-path           = "pnp/board.pdf"
 content_sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-origin_node    = "home-pi"
-sync_mode      = "manual"
+origin_node = "home-pi"
+path = "pnp/board.pdf"
+sync_mode = "manual"
 ```
 
 ## 11. Genesis record + file-ID derivation
@@ -603,7 +631,7 @@ ops, §10).
 
 | Field | Type | Notes |
 |---|---|---|
-| `fed_id` | string | 64-hex; minted at `fed init` as the sha256 of the **init op's genesis WAL entry** (canonical bytes per §10). Stable federation identity. |
+| `fed_id` | string | 64-hex; minted at `fed init` as the sha256 of the **whole seq-0 (genesis) WAL entry's canonical bytes** per §10 (`wal.Hash` of the init entry) — NOT the §11 file-ID "genesis record" (which is the 4-field birth record). The two "genesis" hashes differ in input: fed_id hashes the entire WAL entry; a file ID hashes the 4-field record. Stable federation identity. |
 | `[[federation.member]].name` | string | member label. |
 | `[[federation.member]].node` | string | MagicDNS / `100.x`. |
 | `[[federation.member]].joined_at` | string | RFC3339 UTC `Z`. |
