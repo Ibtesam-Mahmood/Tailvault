@@ -122,6 +122,30 @@ func TestVaultGet_CorruptGitBlob(t *testing.T) {
 	}
 }
 
+func TestVaultGet_UnknownSyncModeFailsClosed(t *testing.T) {
+	// sync_mode is an open enum (D15): an unknown value (federation version skew)
+	// must be treated content-addressed — a tampered blob hard-fails, never
+	// delivered-and-labelled-"verified" (fix-42, never-silent-success).
+	content := []byte("authentic payload\n")
+	dir := registerVault(t, "home-pi", nil)
+	f := realFile(t, dir, "media/a.bin", content, []byte("TAMPERED"), "future-mode-v3")
+	rewriteVault(t, dir, "home-pi", []catalog.File{f})
+
+	destDir := t.TempDir()
+	dest := filepath.Join(destDir, "a.bin")
+	_, err := run("vault", "get", "home-pi/media/a.bin", "-o", dest)
+	if !isTVCode(err, tserr.ObjMissing) {
+		t.Fatalf("unknown sync_mode + tampered blob: want TV-OBJ-01 (exit 5), got %v", err)
+	}
+	if _, err := os.Stat(dest); !os.IsNotExist(err) {
+		t.Errorf("no bytes may land for an unknown-mode integrity failure")
+	}
+	ents, _ := os.ReadDir(destDir)
+	for _, e := range ents {
+		t.Errorf("stray file left in dest dir: %s", e.Name())
+	}
+}
+
 func TestVaultGet_EditedManualFile(t *testing.T) {
 	content := []byte("scanned manual content\n")
 	dir := registerVault(t, "home-pi", nil)

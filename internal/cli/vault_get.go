@@ -149,7 +149,11 @@ func runVaultGet(cmd *cobra.Command, arg string, fl getFlags) error {
 	if !fl.noReceipt {
 		receiptPath, err = writePullReceipt(file, home, got)
 		if err != nil {
-			return err
+			// The bytes are already delivered (rename succeeded); the receipt is an
+			// advisory recovery artifact (D24b), never authoritative. A failure to
+			// write it must NOT fail the delivery — warn and continue (exit 0).
+			fmt.Fprintf(cmd.ErrOrStderr(), "warning: delivered %s but could not write pull receipt: %v\n", dest, err)
+			receiptPath = ""
 		}
 	}
 
@@ -211,8 +215,12 @@ func downloadVerified(ctx context.Context, b backend.Backend, file catalog.File,
 	}
 
 	got := hex.EncodeToString(h.Sum(nil))
-	if got != file.SHA256 && file.SyncMode == catalog.SyncModeGit {
-		// git-mode: content-addressed, so a mismatch is corruption — hard-fail.
+	if got != file.SHA256 && file.SyncMode != catalog.SyncModeManual {
+		// Every mode EXCEPT manual is content-addressed (the sha is the key), so a
+		// mismatch is corruption — hard-fail. sync_mode is an open enum (D15): an
+		// unknown future/skewed value is treated content-addressed (fail-CLOSED),
+		// never delivered-and-labelled-"verified" (never-silent-success). Only
+		// manual is editable in place (H12), where drift is legitimate.
 		return "", tserr.ObjMissingErr(identity.Short(file.ID)+" (integrity: downloaded sha "+shortHash(got)+" != recorded "+shortHash(file.SHA256)+")", nil)
 	}
 
@@ -228,8 +236,9 @@ func downloadVerified(ctx context.Context, b backend.Backend, file catalog.File,
 }
 
 // freshnessNote describes the delivered bytes relative to the catalog's recorded
-// sha. git-mode files are already integrity-verified by downloadVerified, so they
-// are "verified". manual-mode files are editable in place (H12), so a mismatch is
+// sha. Non-manual modes are content-addressed and already integrity-verified by
+// downloadVerified (a mismatch hard-failed before reaching here), so "verified"
+// is truthful. manual-mode files are editable in place (H12), so a mismatch is
 // legitimate drift, reported against last_scanned — never called "corrupt".
 func freshnessNote(file catalog.File, got string) string {
 	if file.SyncMode != catalog.SyncModeManual {

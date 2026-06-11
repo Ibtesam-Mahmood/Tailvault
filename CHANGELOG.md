@@ -6,6 +6,22 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.78 — 2026-06-11
+
+Phase 4 (fix-42) — `vault get` fails closed on integrity mismatch for any non-manual mode.
+
+- `downloadVerified` now hard-fails on a sha mismatch for ANY sync_mode except
+  `manual` (content-addressed unless explicitly mutable). Closes the fail-open hole on
+  the OPEN sync_mode enum (D15): an unknown mode + corrupt blob previously delivered
+  silently labeled "verified" — violated "never silent success." The "verified"
+  freshness label is now truthful for every non-manual mode. New test: unknown
+  sync_mode + tampered blob → TV-OBJ exit5, no bytes at dest.
+- LOW 42.3: a pull-receipt write failure AFTER successful delivery is now a stderr
+  warning, not a hard error (receipts advisory per D24b; bytes already landed) → exit0.
+- LOW 42.2: confirmed SPEC has no distinct TV-OBJ corruption subcode (only TV-OBJ-01
+  ObjMissing); reuse is intentional — a distinct subcode would need a frozen-SPEC
+  amendment (Block 5 candidate).
+
 ## v0.0.77 — 2026-06-11
 
 Phase 4 (fix-48 / SG-7) — federation-wide id-collision guard for `restore-identity`.
