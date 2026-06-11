@@ -200,7 +200,22 @@ func WriteHashFile(p string, hf HashFile) error {
 		os.Remove(tmpName)
 		return fmt.Errorf("auth: rename passwd: %w", err)
 	}
+	// Flush the directory entry so the rename of this secret survives a crash,
+	// matching the frozen atomicity standard (catalog/wal do the same).
+	fsyncDir(dir)
 	return nil
+}
+
+// fsyncDir flushes a directory entry so a rename into it survives a crash. A
+// platform that cannot open or sync a directory is tolerated (best effort) — the
+// rename already landed.
+func fsyncDir(dir string) {
+	d, err := os.Open(dir)
+	if err != nil {
+		return
+	}
+	defer d.Close()
+	_ = d.Sync()
 }
 
 // LoadHashFile reads and parses the PHC hash file at path. ok is false (with a

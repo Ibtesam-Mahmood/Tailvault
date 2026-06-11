@@ -6,6 +6,13 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.50 — 2026-06-11
+
+Phase 4 (task-46 follow-up) — `WriteHashFile` now fsyncs the parent directory after
+the rename, so the password file's atomic write survives a crash, matching the
+frozen catalog/wal atomicity standard. Closes the optional review nit from
+task-46 part 1. Best-effort `fsyncDir` (tolerates platforms that can't sync a dir).
+
 ## v0.0.49 — 2026-06-11
 
 Phase 4 (task-46 part 2a of 2) — the wal-independent half of the auth command
