@@ -6,6 +6,21 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.46 — 2026-06-11
+
+Phase 4 (task-40) — remote sha256 short-circuit; resolves accepted deviation
+DEV-C1 (GH-2). Promotes `HashObject` from a package-level helper to a first-class
+`Backend` interface method so every remote command gets a cheap integrity answer
+with no "maybe the backend can hash" branch.
+
+- `internal/backend`: `Backend.HashObject(ctx, key)`; SSH runs `sha256sum` on the
+  node and ships only the 64-hex digest (strict `parseSha256Sum`, coreutils +
+  busybox tolerant; miss → TV-OBJ-01, permission → TV-NODE-02, ping → TV-NODE-01).
+  Taildrive/stub hash locally; `FSBackend.Hashes` counter proves zero-blob-stream.
+- `internal/verify`: pass-1 switched to `HashObject` — same corrupt/missing
+  reporting, transfer cost drops to a digest.
+- EDGE-CASES.md: sha256sum format variance, permission→TV-NODE-02, missing→TV-OBJ-01.
+
 ## v0.0.45 — 2026-06-11
 
 Phase 3 (task-27) — freeze SPEC v2 federation contract. Appends "Part 2 —

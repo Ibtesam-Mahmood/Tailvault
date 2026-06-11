@@ -72,6 +72,25 @@ func (b *Taildrive) Get(_ context.Context, key string, w io.Writer) error {
 	return err
 }
 
+// HashObject hashes the blob through the local mount: the share IS the locality,
+// so there is nothing remote to shell into on a passive Taildrive share. Missing
+// key -> TV-OBJ-01; any other os error -> a typed node condition.
+func (b *Taildrive) HashObject(_ context.Context, key string) (string, error) {
+	f, err := os.Open(b.pathFor(key))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", objMissing(key)
+		}
+		return "", b.nodeErr(err)
+	}
+	defer f.Close()
+	sum, err := hashReader(f)
+	if err != nil {
+		return "", b.nodeErr(err)
+	}
+	return sum, nil
+}
+
 func (b *Taildrive) Put(ctx context.Context, key string, r io.Reader) error {
 	m, err := b.Stat(ctx, key)
 	if err != nil {

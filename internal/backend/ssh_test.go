@@ -43,6 +43,7 @@ func TestSSH_PingFailure_TVNODE01(t *testing.T) {
 		{"Stat", func() error { _, e := s.Stat(context.Background(), "objects/x"); return e }},
 		{"Get", func() error { return s.Get(context.Background(), "objects/x", &bytes.Buffer{}) }},
 		{"Put", func() error { return s.Put(context.Background(), "objects/x", strings.NewReader("d")) }},
+		{"HashObject", func() error { _, e := s.HashObject(context.Background(), "objects/x"); return e }},
 	} {
 		err := op.run()
 		var te *tserr.Error
@@ -184,5 +185,94 @@ func TestSSH_NoUser_Target(t *testing.T) {
 	s := &SSH{Node: "home-pi", BasePath: "/v"}
 	if s.target() != "home-pi" {
 		t.Errorf("target() without user = %q, want home-pi", s.target())
+	}
+}
+
+// validDigest is sha256("") — a real 64-char lowercase hex digest.
+const validDigest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+func TestSSH_HashObject_ParsesAcrossHelpers(t *testing.T) {
+	// sha256sum output format varies by coreutils/busybox; only the leading
+	// 64-hex token is trusted. Each of these must parse to the same digest.
+	for name, out := range map[string]string{
+		"coreutils two-space": validDigest + "  /mnt/ssd/tailvault/objects/x\n",
+		"busybox star":        validDigest + " */mnt/ssd/tailvault/objects/x\n",
+		"single space":        validDigest + " name\n",
+		"no filename":         validDigest + "\n",
+		"leading whitespace":  "  " + validDigest + "  name\n",
+	} {
+		s := newSSH(&scriptedRunner{handle: func(_ string, _ io.Reader, w io.Writer) ([]byte, error) {
+			io.WriteString(w, out)
+			return nil, nil
+		}})
+		got, err := s.HashObject(context.Background(), "objects/x")
+		if err != nil || got != validDigest {
+			t.Errorf("%s: HashObject = %q, %v; want %q, nil", name, got, err, validDigest)
+		}
+	}
+}
+
+func TestSSH_HashObject_RejectsBadOutput(t *testing.T) {
+	// Garbage / truncated / wrong-case output must hard-fail, never silently
+	// pass off a bogus digest as success.
+	for name, out := range map[string]string{
+		"empty":       "",
+		"truncated":   "9f2b1c  name\n",
+		"too long":    validDigest + "ab  name\n",
+		"uppercase":   strings.ToUpper(validDigest) + "  name\n",
+		"non-hex":     "g3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  name\n",
+		"prose error": "sha256sum: command not found\n",
+	} {
+		s := newSSH(&scriptedRunner{handle: func(_ string, _ io.Reader, w io.Writer) ([]byte, error) {
+			io.WriteString(w, out)
+			return nil, nil
+		}})
+		if got, err := s.HashObject(context.Background(), "objects/x"); err == nil {
+			t.Errorf("%s: HashObject = %q, nil; want error", name, got)
+		}
+	}
+}
+
+func TestSSH_HashObject_Missing_TVOBJ01(t *testing.T) {
+	s := newSSH(&scriptedRunner{handle: func(_ string, _ io.Reader, _ io.Writer) ([]byte, error) {
+		return []byte(missingMarker + "\n"), errors.New("exit status 7")
+	}})
+	_, err := s.HashObject(context.Background(), "objects/x")
+	if !errors.Is(err, ErrNotExist) {
+		t.Errorf("HashObject(missing): errors.Is ErrNotExist = false; got %v", err)
+	}
+	var te *tserr.Error
+	if !errors.As(err, &te) || te.Code != tserr.ObjMissing {
+		t.Errorf("HashObject(missing): want TV-OBJ-01, got %v", err)
+	}
+}
+
+func TestSSH_HashObject_Permission_TVNODE02(t *testing.T) {
+	s := newSSH(&scriptedRunner{handle: func(_ string, _ io.Reader, _ io.Writer) ([]byte, error) {
+		return []byte("sha256sum: /mnt/ssd/tailvault/objects/x: Permission denied\n"), errors.New("exit status 1")
+	}})
+	_, err := s.HashObject(context.Background(), "objects/x")
+	var te *tserr.Error
+	if !errors.As(err, &te) || te.Code != tserr.NodeNotWritable {
+		t.Errorf("HashObject on permission denied: want TV-NODE-02, got %v", err)
+	}
+}
+
+func TestSSH_HashObject_NoBlobStreaming(t *testing.T) {
+	// The short-circuit must invoke sha256sum on the node and never `cat` the
+	// blob back — the whole point of DEV-C1.
+	r := &scriptedRunner{handle: func(remoteCmd string, _ io.Reader, w io.Writer) ([]byte, error) {
+		io.WriteString(w, validDigest+"  name\n")
+		return nil, nil
+	}}
+	s := newSSH(r)
+	if _, err := s.HashObject(context.Background(), "objects/x"); err != nil {
+		t.Fatalf("HashObject: %v", err)
+	}
+	if len(r.calls) != 1 || !strings.Contains(r.calls[0], "sha256sum") {
+		t.Fatalf("expected one sha256sum call, got %v", r.calls)
+	}
+	if strings.Contains(r.calls[0], "cat ") {
+		t.Errorf("HashObject streamed the blob (cat) instead of hashing remotely: %q", r.calls[0])
 	}
 }

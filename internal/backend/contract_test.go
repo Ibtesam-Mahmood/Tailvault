@@ -3,6 +3,8 @@ package backend
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"strings"
 	"testing"
@@ -46,6 +48,16 @@ func RunContract(t *testing.T, b Backend) {
 	}
 	if !bytes.Equal(got.Bytes(), payload) {
 		t.Fatalf("Get bytes = %q, want %q", got.Bytes(), payload)
+	}
+
+	// HashObject returns the known digest of the stored bytes.
+	wantDigest := sha256Hex(payload)
+	if d, err := b.HashObject(ctx, key); err != nil || d != wantDigest {
+		t.Fatalf("HashObject(present) = %q, %v; want %q, nil", d, err, wantDigest)
+	}
+	// HashObject of an absent key -> TV-OBJ-01 wrapping ErrNotExist.
+	if _, err := b.HashObject(ctx, "objects/absent-hash"); !isObjMissing(err) {
+		t.Fatalf("HashObject(absent): want TV-OBJ-01/ErrNotExist, got %v", err)
 	}
 
 	// List by prefix finds it; an unrelated prefix does not.
@@ -106,7 +118,7 @@ func TestFSBackend_MisKeyedBlobAllowed(t *testing.T) {
 	if err := b.Put(ctx, key, bytes.NewReader([]byte("not the right bytes"))); err != nil {
 		t.Fatalf("Put mis-keyed: %v", err)
 	}
-	sum, err := HashObject(ctx, b, key)
+	sum, err := b.HashObject(ctx, key)
 	if err != nil {
 		t.Fatalf("HashObject: %v", err)
 	}
@@ -164,4 +176,9 @@ func contains(ss []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func sha256Hex(b []byte) string {
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
 }

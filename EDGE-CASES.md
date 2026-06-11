@@ -41,3 +41,26 @@
   last, UTF-8, no BOM) with a load-bearing test vector
   (`…board.pdf` → `30092d830e26…`). task-30 must reproduce it byte-for-byte.
 - **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-40 (remote sha256 short-circuit, DEV-C1)
+- **Edge case:** `sha256sum` output format varies by implementation — coreutils
+  emits `<hex>␠␠<file>`, busybox `<hex>␠*<file>`, and some paths a bare digest.
+- **Decision:** chose — trust only the leading 64-lowercase-hex token (`parseSha256Sum`
+  + `isLowerHex`); reject empty/truncated/over-long/uppercase/non-hex/prose. Never
+  silent-success on garbage output.
+- **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-40 (remote sha256 short-circuit, DEV-C1)
+- **Edge case:** permission-denied reading a blob over SSH could be misreported as
+  a missing object, falsely telling the user the blob is gone.
+- **Decision:** chose — classify as TV-NODE-02 (node reachable but not readable),
+  same as the write path, NOT TV-OBJ-01. Reserves the missing-object signal for a
+  genuine `[ -f ]` miss.
+- **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-40 (remote sha256 short-circuit, DEV-C1)
+- **Edge case:** `HashObject` of a missing blob must stay behavior-compatible with
+  the old stream-and-hash path it replaces.
+- **Decision:** chose — a `[ -f ]` miss returns TV-OBJ-01 (exit 5), identical to
+  `Get`, so the short-circuit is a drop-in for verify's pass-1.
+- **Follow-up:** none

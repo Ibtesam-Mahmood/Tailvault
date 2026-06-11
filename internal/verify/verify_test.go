@@ -129,3 +129,33 @@ func TestRun_HistoryVersionMissing(t *testing.T) {
 		t.Fatalf("Missing = %v, want history version A reported", rep.Missing)
 	}
 }
+
+func TestRun_UsesHashObjectNotGet(t *testing.T) {
+	// The DEV-C1 short-circuit: verify must hash every blob via HashObject and
+	// stream ZERO blob bytes back through Get. Asserted on the counting stub.
+	ctx := context.Background()
+	b := backend.NewFSBackend(t.TempDir())
+	c1, c2, c3 := []byte("one"), []byte("two"), []byte("three")
+	putBlob(t, b, shaOf(c1), c1)
+	putBlob(t, b, shaOf(c2), c2)
+	putBlob(t, b, shaOf(c3), c3)
+	lk := &lock.Lock{Entries: []lock.Entry{
+		{Path: "a", SHA256: shaOf(c1)},
+		{Path: "b", SHA256: shaOf(c2)},
+		{Path: "c", SHA256: shaOf(c3)},
+	}}
+
+	rep, err := Run(ctx, b, lk)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !rep.OK() || rep.Checked != 3 {
+		t.Fatalf("report = %+v; want clean, Checked=3", rep)
+	}
+	if b.Hashes != 3 {
+		t.Errorf("HashObject calls = %d, want 3 (one per blob)", b.Hashes)
+	}
+	if b.Gets != 0 {
+		t.Errorf("Get calls = %d, want 0 (verify must not stream blobs)", b.Gets)
+	}
+}

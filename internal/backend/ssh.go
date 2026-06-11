@@ -114,6 +114,32 @@ func (s *SSH) Get(ctx context.Context, key string, w io.Writer) error {
 	return nil
 }
 
+// HashObject runs `sha256sum` on the node and returns only the 64-hex digest —
+// the blob bytes never cross the tailnet (the DEV-C1 / GH-2 short-circuit). It
+// mirrors Get's missing-vs-failure classification: an explicit `[ -f ]` test
+// distinguishes a missing blob (TV-OBJ-01) from a node/permission failure
+// (TV-NODE-01/02). Output is parsed strictly — exactly 64 lowercase hex before
+// the first space, never a silent success on a misconfigured node.
+func (s *SSH) HashObject(ctx context.Context, key string) (string, error) {
+	if err := s.preflight(ctx); err != nil {
+		return "", err
+	}
+	p := shellQuote(s.remotePath(key))
+	// No `--` before the path: it is always an absolute, shell-quoted path, and
+	// busybox `sha256sum` does not accept the `--` end-of-options marker that
+	// coreutils does — dropping it keeps both helper families working.
+	cmd := fmt.Sprintf("if [ -f %s ]; then sha256sum %s; else echo %s >&2; exit 7; fi", p, p, missingMarker)
+	var buf bytes.Buffer
+	stderr, err := s.ssh(ctx, nil, &buf, cmd)
+	if err != nil {
+		if strings.Contains(string(stderr), missingMarker) {
+			return "", objMissing(key)
+		}
+		return "", classifyWrite(s.Node, stderr, err)
+	}
+	return parseSha256Sum(buf.String())
+}
+
 func (s *SSH) Put(ctx context.Context, key string, r io.Reader) error {
 	if err := s.preflight(ctx); err != nil {
 		return err
@@ -198,6 +224,37 @@ func classifyWrite(node string, stderr []byte, err error) error {
 		return fmt.Errorf("backend/ssh: %s: %w", strings.TrimSpace(string(stderr)), err)
 	}
 	return fmt.Errorf("backend/ssh: %w", err)
+}
+
+// parseSha256Sum extracts the digest from `sha256sum` output. The format differs
+// subtly across coreutils ("<hex>  <name>") and busybox ("<hex>  <name>" or
+// "<hex> *<name>"), so only the leading whitespace-delimited token is trusted,
+// and it must be exactly 64 lowercase hex characters; anything else is an error,
+// never a silent success.
+func parseSha256Sum(out string) (string, error) {
+	fields := strings.Fields(out)
+	if len(fields) == 0 {
+		return "", fmt.Errorf("backend/ssh: empty sha256sum output")
+	}
+	digest := fields[0]
+	if len(digest) != 64 || !isLowerHex(digest) {
+		return "", fmt.Errorf("backend/ssh: unexpected sha256sum output %q", strings.TrimSpace(out))
+	}
+	return digest, nil
+}
+
+// isLowerHex reports whether s is non-empty and consists solely of 0-9 / a-f.
+func isLowerHex(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			return false
+		}
+	}
+	return true
 }
 
 // shellQuote single-quotes s for safe interpolation into a remote POSIX shell

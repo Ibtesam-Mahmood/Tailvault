@@ -500,3 +500,6 @@ func (forgetfulBackend) Get(context.Context, string, io.Writer) error   { return
 func (forgetfulBackend) Put(context.Context, string, io.Reader) error   { return nil }
 func (forgetfulBackend) Delete(context.Context, string) error           { return nil }
 func (forgetfulBackend) List(context.Context, string) ([]string, error) { return nil, nil }
+func (forgetfulBackend) HashObject(context.Context, string) (string, error) {
+	return "", nil
+}

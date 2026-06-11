@@ -43,15 +43,22 @@ type Backend interface {
 	Delete(ctx context.Context, key string) error
 	// List returns the keys under prefix (store-relative, slash-separated).
 	List(ctx context.Context, prefix string) ([]string, error)
+	// HashObject returns the lowercase sha256 hex digest of the stored object
+	// WITHOUT streaming its bytes back to the caller: the SSH backend runs
+	// `sha256sum` on the node and ships back only the 64-hex digest, while the
+	// local-disk backends (FSBackend, Taildrive) hash through their mount. A
+	// missing key returns a TV-OBJ-01 tserr.Error wrapping ErrNotExist, exactly
+	// like Get. Used by verify (task-23) and every Block 4 remote command that
+	// needs a cheap integrity answer.
+	HashObject(ctx context.Context, key string) (string, error)
 }
 
-// HashObject streams the object at key through SHA-256 and returns its lowercase
-// hex digest. It is backend-agnostic (works for FSBackend and SSH); the SSH
-// backend may later short-circuit with a remote `sha256sum`. Used by verify
-// (task-23) to detect corruption / confirm integrity.
-func HashObject(ctx context.Context, b Backend, key string) (string, error) {
+// hashReader streams r through SHA-256 and returns its lowercase hex digest.
+// Shared by the local-disk backends (FSBackend, Taildrive), which already hold
+// the bytes locally and need no remote helper.
+func hashReader(r io.Reader) (string, error) {
 	h := sha256.New()
-	if err := b.Get(ctx, key, h); err != nil {
+	if _, err := io.Copy(h, r); err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil

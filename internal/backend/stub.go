@@ -27,7 +27,8 @@ type FSBackend struct {
 	Root string
 
 	Puts    int // successful writes (excludes deduped no-op Puts)
-	Gets    int // successful reads
+	Gets    int // successful reads (Get only; HashObject does NOT bump this)
+	Hashes  int // successful HashObject calls
 	Deletes int // Delete calls that removed a file
 }
 
@@ -65,6 +66,27 @@ func (b *FSBackend) Get(_ context.Context, key string, w io.Writer) error {
 	}
 	b.Gets++
 	return nil
+}
+
+// HashObject hashes the file under Root with the same semantics as the real
+// backends (missing -> TV-OBJ-01), so it is a faithful double for the multi-node
+// harness (task-39) and the Block 4 suite (task-50). It hashes the bytes in
+// place WITHOUT a Get — the counting proof that verify streams zero blob bytes.
+func (b *FSBackend) HashObject(_ context.Context, key string) (string, error) {
+	f, err := os.Open(b.pathFor(key))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", objMissing(key)
+		}
+		return "", err
+	}
+	defer f.Close()
+	sum, err := hashReader(f)
+	if err != nil {
+		return "", err
+	}
+	b.Hashes++
+	return sum, nil
 }
 
 func (b *FSBackend) Put(ctx context.Context, key string, r io.Reader) error {
