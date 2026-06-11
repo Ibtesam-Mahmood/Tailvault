@@ -22,6 +22,7 @@ func newRootCmd() *cobra.Command {
 		newMergeLockCmd(), newFilterCleanCmd(), newFilterSmudgeCmd(),
 		newNodeCmd(),
 		newVaultCmd(),
+		newOpsCmd(),
 	)
 	return root
 }

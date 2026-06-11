@@ -459,3 +459,27 @@
 - **Decision:** chose — 48/49 use coder-c's merged `locationBackend`; coder-a's draft
   resolver dropped. One resolver, one gate.
 - **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-37 (ops command)
+- **Edge case:** `Sweep` must report a chain-broken member without aborting the
+  listing, but the task sketch's `([]PendingOp, fed.Reach, error)` tuple has no
+  slot for per-member chain-broken state.
+- **Decision:** chose — `Sweep` returns `SweepResult{Ops, Reach, Members
+  []MemberStatus}` (deviation from the tuple). A chain-broken member's ops are
+  WITHHELD (a tampered journal must never drive retries) + surfaced as a
+  `MemberStatus{ChainBroken}` trailing row (→ TV-FED-03 class); unreachable
+  members degrade the listing, never fail it. `ops list` exits 0 with pending
+  shown (inspection); `--fail-pending` gives scripts a non-zero exit.
+- **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-37 (ops command — executors)
+- **Edge case:** retry must replay through the SAME engine code as the original
+  op, but ingest.ReplayOp persists the catalog via LOCAL WriteAtomic (no backend),
+  so it cannot replay on an SSH member (no local catalog path).
+- **Decision:** chose — replayOpExecutor (ingest/scan/move/delete) is registered
+  only for local/taildrive members; on an SSH member `ops retry` of those types
+  returns a clear "not yet supported (DG-33.1) — fix on the node" config error,
+  consistent with task-33/34's local-root model. The gc executor (mine) uses
+  backend.PutOverwrite and so works over ANY backend. Remote-member ingest replay
+  lands when SSH bootstrap does.
+- **Follow-up:** GH/Block-7 candidate — remote-member ingest-family replay (SSH).

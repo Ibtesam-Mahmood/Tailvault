@@ -6,6 +6,22 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.75 — 2026-06-11
+
+Phase 4 (task-37) — `ops` command (pending-op sweep + retry across the federation).
+
+- `internal/ops/ops.go`: `Sweep` fans out over roster members and returns
+  `SweepResult{Ops, Reach, Members}` — a chain-broken member's ops are WITHHELD (a
+  tampered journal must never drive retries) and surfaced as a trailing
+  `MemberStatus{ChainBroken}` row (TV-FED-03 class); unreachable members degrade the
+  listing, never fail it. `WaitsOn` + diagnose-before-retry.
+- `internal/cli/ops.go`: `ops list` (exit 0 with pending shown; `--fail-pending` for
+  scripts) + `ops retry`. Executors: `replayOpExecutor` (ingest/scan/move/delete via
+  `ingest.ReplayOp`) registered local/taildrive only — SSH replay deferred (DG-33.1);
+  the gc executor uses `backend.PutOverwrite` and works over any backend. Reuses
+  coder-c's `vault_common` (loadRoster/backendForRegistry/memberProbe) — no duplicated
+  fan-out logic.
+
 ## v0.0.74 — 2026-06-11
 
 Phase 4 (tasks 48 & 49) — `vault restore-identity` (gated) + `track` vault-mode.
