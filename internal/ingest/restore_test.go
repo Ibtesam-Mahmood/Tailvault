@@ -72,6 +72,45 @@ func TestRestoreIdentitySwapsToOriginal(t *testing.T) {
 	}
 }
 
+// TestRestoreIdentityOpIsProjectionSufficient is fix-35-B: the OpRestore WAL
+// entry must carry the full genesis PREIMAGE (not just restored_id = sha256(g)),
+// so a catalog rebuild from the WAL alone (ProjectCatalog) can reconstruct
+// f.Genesis. This asserts the writer half — the args reconstruct g exactly and g
+// self-certifies to restored_id. The end-to-end ProjectCatalog round-trip rides
+// with coder-b's applyOp OpRestore case (fix-35-A / #39).
+func TestRestoreIdentityOpIsProjectionSufficient(t *testing.T) {
+	ctx := context.Background()
+	_, o := restoreEnv(t)
+	g, origID := origGenesis()
+	o.Cat.Upsert(catalog.File{
+		ID: "reminted000000000000000000000000000000000000000000000000000000", SHA256: "ff",
+		Path: "media/clip.mp4", SyncMode: catalog.SyncModeManual,
+	})
+	if _, err := RestoreIdentity(ctx, o, "media/clip.mp4", origID, g); err != nil {
+		t.Fatalf("RestoreIdentity: %v", err)
+	}
+	recs, _ := o.Log.Read(ctx)
+	args := recs[0].Entry.Args
+
+	rebuilt := identity.Genesis{
+		ContentSHA256: args["content_sha256"],
+		OriginalPath:  args["original_path"],
+		IngestOpID:    args["ingest_op_id"],
+		OriginNode:    args["origin_node"],
+	}
+	if rebuilt != g {
+		t.Fatalf("genesis preimage not faithfully recorded in op args:\n got  %+v\n want %+v\n args %+v", rebuilt, g, args)
+	}
+	// projection-sufficiency: the recorded preimage must hash back to restored_id.
+	ok, err := identity.Verify(rebuilt, args["restored_id"])
+	if err != nil || !ok {
+		t.Fatalf("reconstructed genesis must self-certify restored_id: ok=%v err=%v", ok, err)
+	}
+	if args["restored_id"] != origID {
+		t.Errorf("restored_id = %s, want %s", args["restored_id"], origID)
+	}
+}
+
 func TestRestoreIdentityNoTarget(t *testing.T) {
 	ctx := context.Background()
 	_, o := restoreEnv(t)

@@ -6,6 +6,19 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.86 — 2026-06-11
+
+### Fixed
+- **OpRestore WAL records now carry the full genesis preimage (fix #40 / 35-B,
+  ship-blocker).** The restore op previously recorded only `restored_id` (a one-way
+  sha256), so `ingest.ProjectCatalog` could not reconstruct a restored entry's
+  `id` + `Genesis` on replay — making `vault rebuild-catalog` lose restored files.
+  The OpRestore args now include the genesis preimage (content_sha256 /
+  original_path / ingest_op_id / origin_node), making a restore projection-
+  sufficient. Additive args on an existing op_type — no SPEC §10/§11 amendment
+  (logged DG-35.B: op records must be projection-sufficient). The projector half
+  (applyOp OpRestore case + end-to-end round-trip test) rides with fix #39.
+
 ## v0.0.85 — 2026-06-11
 
 ### Added

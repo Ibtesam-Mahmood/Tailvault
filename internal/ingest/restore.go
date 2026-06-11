@@ -66,9 +66,22 @@ func RestoreIdentity(ctx context.Context, o RestoreOpts, currentPath, originalID
 	}
 
 	opID := wal.NewOpID()
+	// The op record must be PROJECTION-SUFFICIENT (SPEC §9c: catalog = projection of
+	// the WAL; fix-35-B). restored_id = sha256(g) is one-way, so recording only the
+	// id leaves a rebuild unable to reconstruct f.Genesis. Carry the full genesis
+	// PREIMAGE (4 small, non-secret fields) in the args so ProjectCatalog's OpRestore
+	// case (fix-35-A) can rebuild ID+Genesis and self-certify hash(genesis)==
+	// restored_id. Key names mirror the OpIngest entry (content_sha256/origin_node),
+	// adding original_path + ingest_op_id explicitly — for a restore the genesis's
+	// birth path and ingest op id are the ORIGINAL file's, not this op's own
+	// path/OpID (so, unlike OpIngest, they cannot be derived and must be recorded).
 	entry := wal.Entry{
 		OpID: opID, OpType: wal.OpRestore, BlobRefs: []string{originalID}, Actor: o.Actor, CreatedAt: now().UTC(),
-		Args: map[string]string{"path": currentPath, "old_id": f.ID, "restored_id": originalID},
+		Args: map[string]string{
+			"path": currentPath, "old_id": f.ID, "restored_id": originalID,
+			"content_sha256": g.ContentSHA256, "original_path": g.OriginalPath,
+			"ingest_op_id": g.IngestOpID, "origin_node": g.OriginNode,
+		},
 	}
 	if _, err := o.Log.AppendIntent(ctx, entry); err != nil && !errors.Is(err, wal.ErrDuplicateOp) {
 		return catalog.File{}, err

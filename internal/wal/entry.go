@@ -47,7 +47,7 @@ const (
 	OpRoster   = "roster"
 	OpScan     = "scan"
 	OpPasswd   = "passwd"  // password rotation (task-46); BlobRefs=["meta/auth/passwd"]
-	OpRestore  = "restore" // identity restoration (task-48); BlobRefs=[restored file id]
+	OpRestore  = "restore" // identity restoration (task-48); BlobRefs=[restored file id]; args carry the genesis preimage (fix-35-B, projection-sufficient)
 )
 
 // ZeroHash is the genesis prev_hash: 64 hex zeros (SPEC v2 §10).
