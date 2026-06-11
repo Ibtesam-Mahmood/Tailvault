@@ -6,6 +6,17 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.100 — 2026-06-11
+
+### Changed
+- **Finalize the down-member test seam: name-only signature + harness lookup.**
+  `cli.SetTestBackendFor` is now keyed by location name only
+  (`func(name string) (backend.Backend, bool)`) — the prior `loc+name` form carried
+  an unused location record. Adds the harness half `Fed.MemberBackend(name)` (a
+  name → down-aware-backend lookup the cli seam fetches), so coder-c's task-50
+  CLI-driven reachability scenarios can wire `cli.SetTestBackendFor(f.MemberBackend)`.
+  Both halves cycle-free; nil-seam-is-production property preserved.
+
 ## v0.0.99 — 2026-06-11
 
 ### Added

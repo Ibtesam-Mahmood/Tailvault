@@ -159,3 +159,26 @@ func TestAuthSeam(t *testing.T) {
 		t.Error("an unknown member must be ungated")
 	}
 }
+
+// TestMemberBackendHonorsSetDown: the name→backend lookup the cli down-member seam
+// (SetTestBackendFor) uses returns a DOWN-AWARE backend (errors while SetDown), so
+// a CLI-driven command honors SetDown.
+func TestMemberBackendHonorsSetDown(t *testing.T) {
+	f := New(t, "home")
+	f.Seed(t, "home", "a.bin", []byte("x"))
+
+	b := f.MemberBackend("home")
+	if b == nil {
+		t.Fatal("MemberBackend(home) is nil")
+	}
+	if _, err := b.Stat(context.Background(), "meta/catalog.toml"); err != nil {
+		t.Fatalf("an up member's backend must work: %v", err)
+	}
+	f.Member(t, "home").SetDown(true)
+	if _, err := b.Stat(context.Background(), "meta/catalog.toml"); err == nil {
+		t.Fatal("a down member's backend must error (SetDown honored)")
+	}
+	if f.MemberBackend("ghost") != nil {
+		t.Error("an unknown member must return a nil backend")
+	}
+}

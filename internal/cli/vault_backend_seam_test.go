@@ -26,7 +26,7 @@ func TestBackendForLocation_TestSeam(t *testing.T) {
 
 	// Installed seam → its override for the matching name.
 	want := backend.NewTaildrive(t.TempDir())
-	SetTestBackendFor(func(_ locations.Location, name string) (backend.Backend, bool) {
+	SetTestBackendFor(func(name string) (backend.Backend, bool) {
 		if name == "x" {
 			return want, true
 		}

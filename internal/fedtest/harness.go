@@ -199,6 +199,28 @@ func New(t *testing.T, names ...string) *Fed {
 // seam uses).
 func (f *Fed) lookup(name string) *Member { return f.byName[name] }
 
+// MemberBackend returns a member's DOWN-AWARE backend by name (the same wrapper
+// Member.Backend() returns: its Get/Stat/Put/etc. error while the member is
+// SetDown(true)). It is the lookup the cli down-member seam (SetTestBackendFor)
+// fetches so a CLI-driven command honors SetDown — otherwise the command builds
+// its own always-reachable backend via backendForLocation and SetDown is
+// invisible. Returns nil for an unknown member. Cycle-free (returns
+// backend.Backend; fedtest never imports cli).
+//
+// Wire it from the CONSUMING package (cli), e.g.:
+//
+//	cli.SetTestBackendFor(func(name string) (backend.Backend, bool) {
+//		if b := f.MemberBackend(name); b != nil { return b, true }
+//		return nil, false
+//	})
+func (f *Fed) MemberBackend(name string) backend.Backend {
+	m := f.lookup(name)
+	if m == nil {
+		return nil
+	}
+	return m.Backend()
+}
+
 // Verifier is the gate seam the cli auth test installs via
 // cli.SetTestGateVerifier(f.Verifier): it returns the in-memory auth.Verifier for
 // a PROTECTED member so a §16-gated command runs the REAL gate path against it.

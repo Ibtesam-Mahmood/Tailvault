@@ -115,12 +115,14 @@ func locationBackend(name string) (backend.Backend, locations.Location, error) {
 // drive the REAL CLI (7b), and the CLI's own taildrive construction can't see
 // SetDown otherwise. Returning (nil, false) for a name leaves production
 // construction in force. nil seam ⇒ production behavior is byte-for-byte unchanged.
-var testBackendFor func(loc locations.Location, name string) (backend.Backend, bool)
+// Keyed by location name (the harness's f.MemberBackend(name) lookup); the
+// location record isn't needed — the override already encapsulates the node.
+var testBackendFor func(name string) (backend.Backend, bool)
 
 // SetTestBackendFor installs (or clears, with nil) the test backend seam.
 // TEST-ONLY: production never calls it; when nil, backendForLocation builds the
 // real ssh/taildrive backend exactly as before.
-func SetTestBackendFor(fn func(loc locations.Location, name string) (backend.Backend, bool)) {
+func SetTestBackendFor(fn func(name string) (backend.Backend, bool)) {
 	testBackendFor = fn
 }
 
@@ -129,7 +131,7 @@ func SetTestBackendFor(fn func(loc locations.Location, name string) (backend.Bac
 // root). Mirrors resolveBackend's per-backend construction.
 func backendForLocation(loc locations.Location, name string) (backend.Backend, error) {
 	if testBackendFor != nil {
-		if b, ok := testBackendFor(loc, name); ok {
+		if b, ok := testBackendFor(name); ok {
 			return b, nil // harness-supplied (down-aware) backend
 		}
 	}
