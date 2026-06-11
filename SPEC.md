@@ -752,6 +752,20 @@ member.** Pending roster ops queued for currently-unreachable members carry the
 **same** requirement when later retried. Block 4's `fed` tasks cite this ruling
 directly.
 
+### `restore-identity` is gated (DEV-48.2, additive amendment)
+
+`vault restore-identity` **overwrites the genesis identity** of an existing
+catalog entry (the self-certifying integrity root, §11). The §16 enumeration of
+gated ops (`mv`/`rm`/`sync_mode`/remote `gc`/`evict`/roster writes) predates
+task-48 and simply omitted it. Per the principled line — **§16 gates mutations of
+existing state; ingestion *creates* new state (ungated, DEV-46.7); restore
+*overwrites* identity, strictly more powerful than `mv`** — `restore-identity`
+**IS password-gated** (team-lead ruling). This is an additive frozen-SPEC
+amendment (mirrors DEV-46.6's `passwd` op-type addition). The task-46 enforcement
+audit includes `restore-identity` in its asserted gated set so SPEC + audit stay
+consistent. (`track`/ingestion remains ungated.) task-51 revisits the
+create-vs-mutate line as a first-class principle.
+
 ## 8b. Frozen Go API names (v2 — extends §8)
 
 Reserved so workstreams don't guess at symbols; Tasks 28–31 fill in the detail.

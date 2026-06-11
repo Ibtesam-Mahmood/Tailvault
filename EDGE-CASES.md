@@ -426,3 +426,36 @@
   disk verify deferred like scan). Local/taildrive run the full check.
 - **Follow-up:** wire lock-v2 id/genesis cross-check after task-35; remote manual-file
   disk verify when SSH bootstrap lands.
+
+- **Date / Task:** 2026-06-11 / task-48 (restore-identity gating)
+- **Edge case:** restore-identity overwrites the genesis identity (the integrity root) —
+  a mutation of existing state strictly more powerful than `mv`; §16 omitted it only
+  because task-48 post-dates the gated-set enumeration.
+- **Decision:** chose — restore-identity is PASSWORD-GATED (DEV-48.2). §16 amended to
+  add it to the enumerated gated set; the task-46 enforcement audit includes it.
+  `track`/ingestion stays UNGATED (creates new state, DEV-46.7). task-51 revisits the
+  create-vs-mutate line.
+- **Follow-up:** task-46 part-2b-ii audit must assert restore-identity in the gated set
+  so §16-amended + audit stay consistent.
+
+- **Date / Task:** 2026-06-11 / task-49 (track vault-mode dispatch)
+- **Edge case:** `track` is overloaded — Block-1 repo include-rule vs vault registration
+  of an existing file.
+- **Decision:** chose — dispatch = `--vault`/`--repo` force; else vault only for a
+  single registered-location-prefixed arg not inside a repo; ambiguity → demand a flag.
+  Block-1 repo behavior byte-for-byte unchanged.
+- **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-48 (restore --lock source) [deferral]
+- **Edge case:** the restore `--lock` source needs lock-v2 (task-35, embeds genesis in
+  lock entries), which isn't on the tip.
+- **Decision:** punted — DG-48.1: `--receipt`/`--record` work now; `--lock` errors
+  clearly until lock-v2 lands.
+- **Follow-up:** wire `--lock` source after task-35.
+
+- **Date / Task:** 2026-06-11 / task-48,49 (resolver convergence)
+- **Edge case:** two candidate location resolvers (coder-a's draft
+  resolveLocation/gateRemoteMutation vs coder-c's merged locationBackend/gateLocation).
+- **Decision:** chose — 48/49 use coder-c's merged `locationBackend`; coder-a's draft
+  resolver dropped. One resolver, one gate.
+- **Follow-up:** none

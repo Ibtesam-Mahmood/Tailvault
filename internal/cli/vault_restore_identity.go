@@ -1,0 +1,161 @@
+package cli
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/spf13/cobra"
+
+	"github.com/Ibtesam-Mahmood/tailvault/internal/identity"
+	"github.com/Ibtesam-Mahmood/tailvault/internal/ingest"
+	"github.com/Ibtesam-Mahmood/tailvault/internal/setup"
+	"github.com/Ibtesam-Mahmood/tailvault/internal/tserr"
+	"github.com/Ibtesam-Mahmood/tailvault/internal/wal"
+)
+
+// newVaultRestoreIdentityCmd implements manual identity recovery (D24): re-seed a
+// rebuilt catalog entry with its ORIGINAL self-certifying id from a surviving
+// genesis record (a pull receipt or a raw record; the lock-v2 source lands with
+// task-35). Never implicit — always explicit, confirmed, WAL-audited, and
+// PASSWORD-GATED: restore overwrites the genesis identity (the integrity root),
+// so per the §16 amendment (DEV-48.2) it is a gated mutation (gateLocation gates
+// SSH node-side only; a taildrive/local mount rides ACL + mount perms).
+func newVaultRestoreIdentityCmd() *cobra.Command {
+	var receipt, record, lockFile, lockPath, passwordFile string
+	var yes bool
+	cmd := &cobra.Command{
+		Use:   "restore-identity <location>/<current-path>",
+		Short: "Re-seed a rebuilt catalog entry with its original self-certifying id",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runVaultRestoreIdentity(cmd, args[0], restoreSources{receipt, record, lockFile, lockPath}, yes, passwordFile)
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(&receipt, "receipt", "", "genesis source: a pull-receipt TOML file")
+	f.StringVar(&record, "record", "", "genesis source: a raw genesis-record TOML file")
+	f.StringVar(&lockFile, "lock", "", "genesis source: a tailvault.lock (v2) file (with --path)")
+	f.StringVar(&lockPath, "path", "", "repo path of the lock entry (with --lock)")
+	f.BoolVar(&yes, "yes", false, "skip the confirmation prompt")
+	f.StringVar(&passwordFile, "password-file", "", "read the vault password from this file (remote/SSH locations)")
+	return cmd
+}
+
+type restoreSources struct {
+	receipt, record, lockFile, lockPath string
+}
+
+func runVaultRestoreIdentity(cmd *cobra.Command, target string, src restoreSources, yes bool, passwordFile string) error {
+	ctx := cmd.Context()
+	out := cmd.OutOrStdout()
+
+	locName, rel, err := splitLocationPath(target)
+	if err != nil {
+		return err
+	}
+
+	g, claimedID, err := loadGenesisSource(src)
+	if err != nil {
+		return err
+	}
+
+	// Self-certification gate: the record must hash to its own id (and to any id
+	// the source carried).
+	id, err := identity.VerifyID(g)
+	if err != nil {
+		return tserr.ConfigErr("restore-identity: invalid genesis record", err)
+	}
+	if claimedID != "" && !strings.EqualFold(claimedID, id) {
+		return tserr.ConfigErr(fmt.Sprintf("restore-identity: record does not self-certify (source id %s, computed %s)", claimedID, id), nil)
+	}
+
+	be, loc, err := locationBackend(locName)
+	if err != nil {
+		return err
+	}
+	cat, err := readCatalog(ctx, be)
+	if err != nil {
+		return tserr.ConfigErr("restore-identity: read catalog", err)
+	}
+	if cat == nil {
+		return tserr.ConfigErr("restore-identity: "+locName+" has no catalog (not bootstrapped)", nil)
+	}
+	f, ok := cat.Find(rel)
+	if !ok {
+		return tserr.ConfigErr(fmt.Sprintf("restore-identity: no catalog entry at %q", rel), nil)
+	}
+	if f.ID == id {
+		fmt.Fprintf(out, "nothing to do: %s already carries id %s\n", rel, identity.Short(id))
+		return nil
+	}
+
+	fmt.Fprintf(out, "restore %s: %s → %s (original)\n", rel, identity.Short(f.ID), identity.Short(id))
+	if g.ContentSHA256 != f.SHA256 && g.ContentSHA256 != f.Genesis.ContentSHA256 {
+		fmt.Fprintf(cmd.ErrOrStderr(), "WARNING: record's original content sha (%s) matches neither the current nor genesis sha of %s — re-identifying the wrong file?\n",
+			identity.Short(g.ContentSHA256), rel)
+	}
+
+	if !yes {
+		pr := setup.NewStdinPrompter(cmd.InOrStdin(), out)
+		ans, _ := pr.AskString("proceed with identity restoration? [y/N]", "n")
+		if !isYes(ans) {
+			fmt.Fprintln(out, "aborted")
+			return nil
+		}
+	}
+
+	// Mutating op that overwrites the integrity root → password-gated (DEV-48.2).
+	// gateLocation enforces SSH node-side; taildrive/local is a no-op (DEV-46.8).
+	if err := gateLocation(ctx, loc, be, locName, passwordFile); err != nil {
+		return err
+	}
+
+	restored, err := ingest.RestoreIdentity(ctx, ingest.RestoreOpts{
+		Backend: be, Log: &wal.Log{B: be}, Cat: cat, Node: loc.Node, Actor: initActor(cmd),
+	}, rel, id, g)
+	if err != nil {
+		return tserr.ConfigErr("restore-identity: "+err.Error(), err)
+	}
+	fmt.Fprintf(out, "restored: %s now carries id %s\n", restored.Path, identity.Short(restored.ID))
+	return nil
+}
+
+// loadGenesisSource reads the genesis record from EXACTLY one source flag.
+func loadGenesisSource(src restoreSources) (identity.Genesis, string, error) {
+	n := 0
+	for _, s := range []string{src.receipt, src.record, src.lockFile} {
+		if s != "" {
+			n++
+		}
+	}
+	if n != 1 {
+		return identity.Genesis{}, "", tserr.ConfigErr("restore-identity: pass exactly one of --receipt / --record / --lock", nil)
+	}
+	switch {
+	case src.receipt != "":
+		r, err := identity.ReadReceiptFile(src.receipt)
+		if err != nil {
+			return identity.Genesis{}, "", tserr.ConfigErr("restore-identity: read --receipt", err)
+		}
+		return r.Genesis, r.ID, nil
+	case src.record != "":
+		g, err := identity.ReadRecordFile(src.record)
+		if err != nil {
+			return identity.Genesis{}, "", tserr.ConfigErr("restore-identity: read --record", err)
+		}
+		return g, "", nil
+	default: // --lock — needs lock schema v2 (task-35); not yet on the tip (DG-48.1).
+		return identity.Genesis{}, "", tserr.ConfigErr("restore-identity: --lock source needs lock schema v2 (task-35), not yet available; use --receipt or --record", nil)
+	}
+}
+
+// splitLocationPath splits "<location>/<rel>" into its parts (restore-identity
+// takes a logical path target; coder-c's parseTarget covers the id-prefix forms
+// used by ls/get).
+func splitLocationPath(target string) (loc, rel string, err error) {
+	parts := strings.SplitN(target, "/", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", tserr.ConfigErr("expected <location>/<path>, got "+target, nil)
+	}
+	return parts[0], parts[1], nil
+}

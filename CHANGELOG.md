@@ -6,6 +6,26 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.74 — 2026-06-11
+
+Phase 4 (tasks 48 & 49) — `vault restore-identity` (gated) + `track` vault-mode.
+
+- `internal/cli/vault_restore_identity.go`: `vault restore-identity <location>/<path>`
+  (`--receipt|--record|--lock+--path`, `--yes`, `--password-file`) re-seeds a rebuilt
+  entry with its original self-certifying genesis id. **PASSWORD-GATED** via
+  `gateLocation` (SSH node-side; taildrive/local rides ACL+mount per DEV-46.8) —
+  restore overwrites the integrity root, a mutation strictly more powerful than `mv`
+  (DEV-48.2). `--receipt`/`--record` wired; `--lock` deferred to lock-v2/task-35
+  (DG-48.1).
+- `internal/cli/track_vault.go`: `track <location>/<path|glob>` vault-mode dispatch
+  (vs Block-1 repo-mode; ambiguity → `--vault`/`--repo`). Exact path overrides
+  `.tailvaultignore` (D22), glob respects it. **UNGATED** (ingestion creates new
+  state, DEV-46.7). Over-backend (local + SSH).
+- `SPEC.md` §16: restore-identity added to the enumerated gated set (DEV-48.2,
+  additive frozen-SPEC amendment); task-51 revisits the create-vs-mutate line.
+- Converged on coder-c's merged `locationBackend`/`readCatalog` (one resolver, one
+  gate); registered `restore-identity` in the vault group.
+
 ## v0.0.73 — 2026-06-11
 
 Phase 4 (task-38) — 3-way verify (lock ↔ catalog ↔ disk + WAL spot-check).
