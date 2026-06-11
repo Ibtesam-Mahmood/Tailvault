@@ -1,21 +1,21 @@
 # Configuration
 
-Example Project has two config files: a committed project config (`example-project.toml`) and
+Tailvault has two config files: a committed project config (`tailvault.toml`) and
 an uncommitted node registry (`locations.toml`). For the schemas' normative
 definition see [`SPEC.md`](../SPEC.md); this is the practical guide.
 
 ---
 
-## Project config — `example-project.toml` (committed)
+## Project config — `tailvault.toml` (committed)
 
-Written by `example-project init`. Decides what is vault-managed and where, with **no**
+Written by `tailvault init`. Decides what is vault-managed and where, with **no**
 node addresses or secrets (those resolve at runtime against `locations.toml`).
 
 ```toml
 version = 1
 
 [storage]
-location = "node-a"      # name resolved via ~/.config/example-project/locations.toml
+location = "node-a"      # name resolved via ~/.config/tailvault/locations.toml
 subpath  = "subdir"     # optional child folder under the location's base_path
 
 [rules]
@@ -41,13 +41,13 @@ bytes. See [`SPEC.md §1, §7`](../SPEC.md).
 
 ## Node registry — `locations.toml` (NOT committed)
 
-Lives at `~/.config/example-project/locations.toml`; carries node addresses and the SSH
-login user. Written interactively by `example-project setup` / `example-project location add`.
+Lives at `~/.config/tailvault/locations.toml`; carries node addresses and the SSH
+login user. Written interactively by `tailvault setup` / `tailvault location add`.
 
 ```toml
 [locations.node-a]
 node      = "node-a.example-net.ts.net"  # MagicDNS or 100.x IP
-base_path = "/mnt/ssd/example-project"            # on a USB3 SSD, not the boot SD
+base_path = "/mnt/ssd/tailvault"            # on a USB3 SSD, not the boot SD
 backend   = "ssh"                           # ssh | taildrive (taildrive planned)
 user      = "user"
 ```
@@ -61,8 +61,8 @@ only). `--node` is always available as a manual fallback.
 
 | Path | Holds | Override |
 | --- | --- | --- |
-| `~/.config/example-project/` | `locations.toml` (node registry) | `$XDG_CONFIG_HOME` |
-| `~/.example-project/` | pull receipts, federation cache, `update-check.json` | `$EXAMPLE_PROJECT_HOME` |
+| `~/.config/tailvault/` | `locations.toml` (node registry) | `$XDG_CONFIG_HOME` |
+| `~/.tailvault/` | pull receipts, federation cache, `update-check.json` | `$TAILVAULT_HOME` |
 
-Neither is committed; both are removable via `example-project update --uninstall` (see
+Neither is committed; both are removable via `tailvault update --uninstall` (see
 [`install.md`](./install.md#uninstalling)).

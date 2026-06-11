@@ -1,6 +1,6 @@
-# How Example Project works
+# How Tailvault works
 
-The concepts behind Example Project: its two modes, the moving parts, data flow,
+The concepts behind Tailvault: its two modes, the moving parts, data flow,
 identity, and federation. For the day-to-day commands see
 [`commands.md`](./commands.md); for config files see
 [`configuration.md`](./configuration.md).
@@ -12,7 +12,7 @@ identity, and federation. For the day-to-day commands see
 Keep the laptop clone lean. Park large blobs (e.g. a project's gigabytes of
 PDFs/STLs) on a home Tailscale node, addressed by content hash under a MagicDNS
 name + path. The git repo only ever holds a four-line **pointer** per large file
-plus a canonical **`example-project.lock`**. On checkout the bytes are restored; on
+plus a canonical **`tailvault.lock`**. On checkout the bytes are restored; on
 commit they're swapped back out. The storage node is reachable from anywhere on
 your tailnet, with no public exposure, no cloud bill, and no API keys.
 
@@ -34,9 +34,9 @@ your tailnet, with no public exposure, no cloud bill, and no API keys.
 | Piece | Where it lives | Role |
 | --- | --- | --- |
 | **Pointer file** | committed in git | Four-line stand-in (`magic`, `sha256`, `size`, `location`) the `clean` filter writes in place of real bytes. |
-| **`example-project.toml`** | committed in git | Project config: which location, what `min_size`, include/exclude globs, history & auto-delete policy. Carries **no** node addresses or credentials. |
-| **`example-project.lock`** | committed in git | Canonical record of *what is stored, where, and when*. Sorted for conflict-free union merges. Each entry can embed the file's full **genesis** identity record, so every clone is an off-node identity backup. |
-| **`locations.toml`** | `~/.config/example-project/`, **never committed** | Maps a location *name* (e.g. `node-a`) → node address, base path, backend, SSH user. Keeps secrets/addresses out of the repo. |
+| **`tailvault.toml`** | committed in git | Project config: which location, what `min_size`, include/exclude globs, history & auto-delete policy. Carries **no** node addresses or credentials. |
+| **`tailvault.lock`** | committed in git | Canonical record of *what is stored, where, and when*. Sorted for conflict-free union merges. Each entry can embed the file's full **genesis** identity record, so every clone is an off-node identity backup. |
+| **`locations.toml`** | `~/.config/tailvault/`, **never committed** | Maps a location *name* (e.g. `node-a`) → node address, base path, backend, SSH user. Keeps secrets/addresses out of the repo. |
 | **Content store** | on the node, `<base_path>/<subpath>/objects/<sha256>` | Deduplicated, content-addressed blobs. History-on files also keep `refs/<path-id>`. |
 | **Catalog** (`meta/catalog.toml`) | on the node | Self-describing vault state: federation roster + one row per tracked file. A materialized projection of the WAL. |
 | **WAL** (`meta/wal/`) | on the node | Hash-chained, tamper-evident write-ahead log — the durable, recoverable record of every node op. The catalog is rebuildable from it. |
@@ -65,7 +65,7 @@ recoverable from any clone's lock.
 
 Multiple storage nodes can be joined into a **federation** sharing one logical
 tree. Reads fan out across reachable members; a file found at a different member
-than its recorded home succeeds **with a WARN** (run `example-project heal`). The system
+than its recorded home succeeds **with a WARN** (run `tailvault heal`). The system
 is **reachability-aware**: it distinguishes "genuinely missing" (exit 5) from
 "can't prove absence because a member is offline" (exit 6) — it never reports a
 false miss under a partial view. Destructive all-members ops (gc) **refuse** to

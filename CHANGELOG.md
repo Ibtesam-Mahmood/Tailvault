@@ -6,6 +6,17 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.111 — 2026-06-11
+
+### Docs
+- **Restored the real `Tailvault` name and repo owner** across `README.md` and
+  `docs/*.md` (reverting the over-broad genericization in v0.0.109, which had
+  renamed Tailvault itself to `example-project`). Install commands and references
+  now use the real `Ibtesam-Mahmood/tailvault` coordinates again. Only **other**
+  projects / personal-machine examples stay generic — the `root-pnp` ("Root PNP")
+  subpath example remains `subdir`, and the node/user examples remain
+  `node-a`/`node-b`/`user`/`example-net`.
+
 ## v0.0.110 — 2026-06-11
 
 ### Docs
