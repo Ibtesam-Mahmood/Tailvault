@@ -6,6 +6,16 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.64 — 2026-06-11
+
+Phase 4 (task-37 support) — `ingest.ReplayOp` replay seam. Lets `ops retry`
+(task-37) reuse bootstrap/scan ordering instead of duplicating it.
+
+- `internal/ingest/replay.go`: replays op_types ingest/scan/move/delete
+  (idempotent; MarkDone on success, leaves the WAL entry pending on error for
+  MarkFailed); rejects gc/roster/sync_mode (other executors own those). coder-b
+  registers it as the task-37 `ops.Executor`. No interface changes.
+
 ## v0.0.63 — 2026-06-11
 
 Phase 4 (SG-6 part 1) — atomic-overwrite `Backend` primitive for mutable keys.
