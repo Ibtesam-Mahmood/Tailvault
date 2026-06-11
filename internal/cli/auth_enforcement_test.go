@@ -13,17 +13,21 @@ import (
 // accidentally gated — fails here rather than silently weakening D9.
 //
 // gatedAllow is the full SPEC v2 §16 gated set (names as they appear in the tree).
-// mustBeGated is the subset OWNED by WS-C and therefore guaranteed present in this
-// branch; restore-identity (coder-a) and the remote gc path (coder-b) are in the
-// allow-list but their presence + annotation is finalized in the integration build
-// (task-50), where all commands coexist.
+// mustBeGated is now the COMPLETE set — every §16-gated command is present and
+// annotated on the integration tree (restore-identity #40, remote gc #42 + the
+// rebuild-catalog node-mutating recovery surface 46.C all carry the gate), so the
+// audit REQUIRES the destructive/remote ops to be gated rather than merely
+// allowing them (closes 46.B — a future ungating of gc/restore now fails here).
 func TestAuthEnforcement_GatedSet(t *testing.T) {
 	gatedAllow := map[string]bool{
 		"mv": true, "rm": true, "sync-mode": true, "passwd": true,
 		"evict": true, "join": true, "leave": true,
-		"restore-identity": true, "gc": true,
+		"restore-identity": true, "gc": true, "rebuild-catalog": true,
 	}
-	mustBeGated := []string{"mv", "rm", "sync-mode", "passwd", "evict", "join", "leave"}
+	mustBeGated := []string{
+		"mv", "rm", "sync-mode", "passwd", "evict", "join", "leave",
+		"restore-identity", "gc", "rebuild-catalog",
+	}
 	// Reads ride the tailnet ACL + SSH alone — NEVER password-gated (§16).
 	reads := map[string]bool{"ls": true, "stat": true, "get": true, "status": true, "scan": true}
 

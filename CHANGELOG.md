@@ -6,6 +6,21 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.94 — 2026-06-11
+
+### Fixed
+- **Remote `gc` is now password-gated (fix #42 / 46.A, SHIP-BLOCKER — §16 D9).**
+  `tailvault gc`'s federated path deleted blobs federation-wide while calling NO
+  `gateLocation` — a destructive remote op running with no password despite §16
+  enumerating "remote gc" in the gated set. gc now calls `gateLocation` BEFORE any
+  blob Delete (+ a `--password-file` flag, + `markGated`). 
+- **§16 enforcement audit hardened (46.B/46.C).** `markGated(rebuild-catalog)` (it
+  already gated but was invisible to the annotation audit); the audit's `mustBeGated`
+  now hard-requires the FULL gated set — mv/rm/sync-mode/passwd/evict/join/leave +
+  restore-identity + gc + rebuild-catalog — so a future ungating fails the audit.
+  `put` stays ABSENT (reads/ingestion ungated). The gate-aware static audit (asserts
+  gateLocation-caller ⟺ markGated) lands in the following commit.
+
 ## v0.0.93 — 2026-06-11
 
 ### Added

@@ -808,3 +808,34 @@
 - **Follow-up:** cross-move dest op does not journal sync_mode/size → rebuilt
   moved-in rows default sync_mode=manual (documented; conservative for gc). A
   future writer addition could close that advisory gap.
+
+- **Date / Task:** 2026-06-11 / fix-46.A (remote gc password gate) [SHIP-BLOCKER, review-46-pt2b-ii]
+- **Edge case:** `tailvault gc` deletes blobs on the node (federated AND v1 paths)
+  but called NO gateLocation — a destructive remote op running with no password,
+  despite SPEC §16 enumerating "remote gc" in the gated set (D9). The §16 audit
+  did not catch it (gc ∉ mustBeGated, and the audit checks the annotation marker,
+  not whether gateLocation is actually invoked — so merely annotating without
+  gating would be a FALSE GREEN).
+- **Decision:** chose — add `gateLocation(ctx, loc, be, cfg.Storage.Location,
+  passwordFile)` BEFORE any Delete in BOTH gc paths (federated: before
+  SweepFederated; v1: before gc.Sweep), mirroring rm/mv ordering; add a
+  `--password-file` flag; `markGated(gcCmd)`. SSH verifies node-side; taildrive/
+  local is a no-op (DEV-46.8) — so a v1 gc on an SSH node is also gated. The gate
+  is genuinely WIRED (not just annotated), so the annotation is truthful.
+- **Follow-up:** the end-to-end "gc wrong-password → TV-AUTH-01, nothing deleted"
+  behavioral test needs an SSH-injectable backend seam (gc resolves its backend
+  internally) — deferred to task-50's SSH stub, like mv/rm/passwd. The gate logic
+  itself is covered by TestGateLocation_SSH (reject → TV-AUTH-01).
+
+- **Date / Task:** 2026-06-11 / fix-46-audit (46.B/46.C — audit requires + is complete)
+- **Edge case:** the §16 enforcement audit ALLOWED restore-identity/gc to be
+  gated but did not REQUIRE them (deferred to "the integration build"), and
+  rebuild-catalog (which calls gateLocation) was neither annotated nor in the
+  allow-list → invisible to the audit.
+- **Decision:** chose — now that all §16-gated commands coexist on the integration
+  tree (restore-identity #40 merged; gc #42 + rebuild-catalog 46.C gated by me),
+  the audit's `mustBeGated` is the COMPLETE set (adds restore-identity, gc,
+  rebuild-catalog) and `gatedAllow` includes rebuild-catalog. A future ungating of
+  any destructive/remote op now fails the audit. (Test file is coder-c's
+  task-46-pt2b-ii — additive edit, coordinated.)
+- **Follow-up:** none

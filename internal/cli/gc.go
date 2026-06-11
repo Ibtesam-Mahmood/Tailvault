@@ -16,6 +16,7 @@ import (
 	"github.com/Ibtesam-Mahmood/tailvault/internal/fed"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/gc"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/gitglue"
+	"github.com/Ibtesam-Mahmood/tailvault/internal/locations"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/lock"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/tailscale"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/tserr"
@@ -24,6 +25,7 @@ import (
 
 func newGCCmd() *cobra.Command {
 	var dryRun bool
+	var passwordFile string
 	cmd := &cobra.Command{
 		Use:   "gc",
 		Short: "Prune unreferenced blobs per retention policy",
@@ -71,7 +73,7 @@ func newGCCmd() *cobra.Command {
 				return tserr.ConfigErr("gc: read catalog", err)
 			}
 			if cat != nil && cat.Federation.FedID != "" {
-				return runFederatedGC(ctx, out, be, cat, stored, keep, preserve, dryRun)
+				return runFederatedGC(ctx, out, be, loc, cfg.Storage.Location, passwordFile, cat, stored, keep, preserve, dryRun)
 			}
 
 			// Non-federated (v1) path — unchanged.
@@ -90,6 +92,13 @@ func newGCCmd() *cobra.Command {
 				fmt.Fprintln(out, "(dry-run: nothing deleted)")
 				return nil
 			}
+			// gc DELETES blobs on the node → password-gated (§16 D9), mirroring
+			// rm/mv: gate BEFORE any Delete. SSH verifies node-side; taildrive/local
+			// is a no-op (DEV-46.8). A v1 vault on an SSH node is a remote delete and
+			// is gated just like the federated path.
+			if err := gateLocation(ctx, loc, be, cfg.Storage.Location, passwordFile); err != nil {
+				return err
+			}
 			n, err := gc.Sweep(ctx, be, plan, false)
 			if err != nil {
 				return err
@@ -99,7 +108,8 @@ func newGCCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "list what would be removed; delete nothing")
-	return cmd
+	cmd.Flags().StringVar(&passwordFile, "password-file", "", "read the vault password from this file (remote/SSH gc)")
+	return markGated(cmd)
 }
 
 // branchLocks reads each local branch tip's committed tailvault.lock and parses
@@ -144,8 +154,8 @@ func readCatalogMaybe(ctx context.Context, be backend.Backend) (*catalog.Catalog
 // runFederatedGC engages the three federation gates and journals the sweep,
 // mapping the engine's plain errors to tserr at the boundary (§8): the
 // all-members gate → TV-FED-02 (exit 6), a broken WAL chain → TV-FED-03 (exit 6).
-func runFederatedGC(ctx context.Context, out io.Writer, be backend.Backend, cat *catalog.Catalog,
-	stored []string, keep, preserve gc.KeepSet, dryRun bool) error {
+func runFederatedGC(ctx context.Context, out io.Writer, be backend.Backend, loc locations.Location, locName, passwordFile string,
+	cat *catalog.Catalog, stored []string, keep, preserve gc.KeepSet, dryRun bool) error {
 	roster, err := fed.FromCatalog(cat)
 	if err != nil {
 		return tserr.ConfigErr("gc: read federation roster", err)
@@ -187,6 +197,11 @@ func runFederatedGC(ctx context.Context, out io.Writer, be backend.Backend, cat 
 	if dryRun {
 		fmt.Fprintln(out, "(dry-run: nothing deleted)")
 		return nil
+	}
+	// Password gate BEFORE the OpGC intent / any Delete (§16 D9). SSH verifies
+	// node-side; taildrive/local is a no-op (DEV-46.8).
+	if err := gateLocation(ctx, loc, be, locName, passwordFile); err != nil {
+		return err
 	}
 	rep, err := gc.SweepFederated(ctx, fctx, p, false)
 	if err != nil {

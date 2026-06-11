@@ -68,7 +68,9 @@ run automatically. Use --dry-run to preview.`,
 	f.BoolVar(&yes, "yes", false, "skip the overwrite confirmation prompt")
 	f.BoolVar(&standalone, "standalone", false, "rebuild a federation-less catalog when no roster can be recovered")
 	f.StringVar(&passwordFile, "password-file", "", "read the vault password from this file (remote/SSH locations)")
-	return cmd
+	// rebuild-catalog overwrites the node's catalog via gateLocation → §16-gated
+	// (46.C): annotate it so the enforcement audit sees the gate it actually wires.
+	return markGated(cmd)
 }
 
 type rebuildOpts struct {
