@@ -6,6 +6,22 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.105 — 2026-06-11
+
+### Docs
+- **Rewrite `README.md` as a structured user document.** Replaces the stale
+  "v0.0.1 — bootstrap, no implementation yet" framing with a full guide: how it
+  works (repo-managed vs vault/federation modes, the moving parts, data flow,
+  identity, federation), features, requirements, install/update/uninstall,
+  `tailvault.toml` / `locations.toml` configuration, a grouped command reference
+  for the real CLI surface, use cases, the error-code/exit-code table, and
+  caveats & known issues.
+- **De-stale `CLAUDE.md` and `CONTRIBUTING.md`.** `CLAUDE.md` Status now reflects
+  v0.0.x active development through Blocks 0–4 (was "Bootstrap v0.0.1, no Go code
+  yet"); the "Planned structure (not yet created)" tree is replaced with the
+  actual implemented package layout. `CONTRIBUTING.md`'s "Once Go code exists"
+  version-embedding note is now present-tense. No source or schema change.
+
 ## v0.0.104 — 2026-06-11
 
 ### Fixed

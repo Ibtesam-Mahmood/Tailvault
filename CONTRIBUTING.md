@@ -11,8 +11,8 @@ The rules below keep history clean and progress legible.
 - **Every task bumps `VERSION` by exactly `+0.0.1`** (patch) and adds a matching
   `## v<version>` entry to the top of [`CHANGELOG.md`](./CHANGELOG.md) **in the
   same commit**.
-- Never hardcode the version elsewhere. Once Go code exists, it will read
-  `VERSION` (embedded at build time) rather than duplicating the string.
+- Never hardcode the version elsewhere. The Go binary reads `VERSION` (embedded
+  at build time via `make build`'s `-ldflags`) rather than duplicating the string.
 - Re-read `VERSION` before committing; if a push is rejected because someone
   else bumped it, rebase and re-apply your `+0.0.1` on top.
 - Releases are tagged `v<version>` (e.g. `git tag v0.0.1`) at meaningful points.
