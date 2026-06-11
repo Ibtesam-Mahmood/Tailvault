@@ -44,7 +44,6 @@ archives:
         formats: [zip]
     files:
       - README.md
-      - LICENSE*
       - CHANGELOG.md
 
 checksum:
@@ -80,7 +79,8 @@ brews:
     directory: Formula
     homepage: "https://github.com/Ibtesam-Mahmood/tailvault"
     description: "Tailscale-native, content-addressed large-file store for git"
-    license: "MIT"
+    # No `license:` stanza — the project ships without an OSS license (all rights
+    # reserved). Add one here (and a LICENSE file) if/when you choose a license.
     # While the repo is private, `brew install` relies on the user's gh/HOMEBREW
     # GitHub token for asset download; once public this is anonymous.
     install: |

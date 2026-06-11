@@ -6,6 +6,18 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.107 — 2026-06-11
+
+### Changed
+- **Release/CI actions bumped to their Node 24 majors** (`actions/checkout@v6`,
+  `actions/setup-go@v6`, `sigstore/cosign-installer@v4`,
+  `goreleaser/goreleaser-action@v7`), clearing the Node 20 deprecation warning
+  ahead of GitHub forcing Node 24 on runners.
+- **Dropped the `MIT` license metadata** from the GoReleaser Homebrew formula and
+  the `LICENSE*` archive glob: the project ships without an OSS license (all
+  rights reserved) until one is deliberately chosen, so the generated formula no
+  longer asserts a license it doesn't have.
+
 ## v0.0.106 — 2026-06-11
 
 ### Added
