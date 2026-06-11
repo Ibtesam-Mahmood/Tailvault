@@ -6,6 +6,16 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.69 — 2026-06-11
+
+Docs (DEV-46.7 ruling) — record the ingestion-gating ruling durably in EDGE-CASES.md
+for the threat-model block (task-51). `vault put` / `track` are NOT password-gated:
+the frozen §16 gated set is enumerative and excludes ingestion, and task-46's audit
+pins to "§16 list exactly" — so gating ingestion would be an unmandated frozen-SPEC
+amendment. Captures the threat-model follow-up (ungated ingestion ⇒ any tailnet+SSH
+peer can add/overwrite content without the password; task-51 to assess for a future
+SPEC rev). Endorsed by maintainer. No source change.
+
 ## v0.0.68 — 2026-06-11
 
 Phase 4 (task-49 engine) — `ingest.Track`: the backend-based manual-ingest

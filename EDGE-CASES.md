@@ -371,3 +371,22 @@
   content-addressed-corruption is verify's verdict, not stat's; manual files drift
   legitimately).
 - **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-43+49 (put/track gating ruling — DEV-46.7)
+- **Edge case:** Is INGESTION (`vault put` remote ingest, `track` manual-ingest)
+  password-gated? SPEC §16's frozen gated set enumerates exactly {mv, rm, sync_mode
+  change, remote gc, evict, roster writes (incl fed join/leave/evict)} — ingestion is
+  NOT listed, yet ingestion WRITES to a node's catalog/WAL/blob and `put --on-conflict`
+  can overwrite.
+- **Decision:** chose — ingestion is NOT password-gated. Follow the frozen §16
+  enumerated set exactly (task-46's enforcement audit asserts gated set == §16 list);
+  gating ingestion would be an unmandated frozen-SPEC amendment (contrast DEV-46.6, where
+  task-46 itself mandated the WAL-logged passwd op). put/track ride the tailnet-ACL + SSH
+  outer auth layer like reads; the password gate stays additive for the enumerated
+  destructive/move/roster ops only.
+- **Follow-up:** ⚠ THREAT-MODEL (task-51): ungated ingestion means ANY tailnet peer with
+  SSH access can add OR overwrite content (`put --on-conflict`) on a node WITHOUT the
+  password. This is the frozen design's intent (password protects destruction/move/roster,
+  not creation) — but task-51 must explicitly assess whether ingestion should join the
+  gated set in a future SPEC rev (the SSH/tailnet ACL is then the ONLY barrier to
+  unauthorized content writes). Endorsed by team-lead for Block 3–4; deferred to task-51.
