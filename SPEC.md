@@ -738,7 +738,7 @@ ops, §10).
 
 | Field | Type | Notes |
 |---|---|---|
-| `fed_id` | string | 64-hex; minted at `fed init` as the sha256 of the **whole seq-0 (genesis) WAL entry's canonical bytes** per §10 (`wal.Hash` of the init entry) — NOT the §11 file-ID "genesis record" (which is the 4-field birth record). The two "genesis" hashes differ in input: fed_id hashes the entire WAL entry; a file ID hashes the 4-field record. Stable federation identity. |
+| `fed_id` | string | 64-hex; minted at `fed init` as the sha256 of the **whole seq-0 (genesis) WAL entry's canonical bytes** per §10 (`wal.Hash` of the init entry) — NOT the §11 file-ID "genesis record" (which is the 4-field birth record). The two "genesis" hashes differ in input: fed_id hashes the entire WAL entry; a file ID hashes the 4-field record. Stable federation identity. **Clarification (task-50):** the hashed entry is a CANONICALLY-CONSTRUCTED seq-0 init record (seq 0, prev_hash = ZeroHash, op_type `roster`, the founding member's args), derived independently of the vault's live WAL tail — so `fed init` is well-defined even on a vault whose WAL already holds ingest ops (it need not be the WAL's first physical entry). |
 | `[[federation.member]].name` | string | member label. |
 | `[[federation.member]].node` | string | MagicDNS / `100.x`. |
 | `[[federation.member]].joined_at` | string | RFC3339 UTC `Z`. |

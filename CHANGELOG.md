@@ -6,7 +6,37 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
-## v0.0.102 — 2026-06-11
+## v0.0.103 — 2026-06-11
+
+### Added
+- **Block-4 integration suite — `task-50`, the final Block 3–4 deliverable.** A
+  6-row end-to-end suite that drives the REAL root-Cobra `Execute()` with user argv
+  and asserts the bucketed process exit code (via `tserr.ExitCodeFor`, the main.go
+  path) + real on-disk state, against the multi-node `internal/fedtest` harness:
+  1. **§16 auth matrix** — all 10 gated commands (mv, rm, sync-mode, fed-leave, gc,
+     evict, rebuild-catalog, restore-identity, join, passwd-change) × {no/wrong pw →
+     TV-AUTH-01 exit 2 + zero-mutation; correct → proceed}; reads ungated. (6 via
+     full e2e, 4 via direct run-func unit refusal+zero-mutation; the merged
+     gate-aware static audit independently proves all 10 gate.)
+  2. **gc behavioral-refusal** — wrong/no pw → exit 2, zero blobs deleted; correct →
+     sweeps; gc-needs-all-members with a member down → TV-FED-02 exit 6 (real
+     `PlanFederated` behind the probe seam).
+  3. **cross-moved GIT file → rebuild-catalog** preserves sync_mode=git (#44).
+  4. **sync-mode-flip → rebuild** round-trip (clean + drift).
+  5. **reachability/crash/restore** — down-member → TV-FED exit 6; crash → ops-retry
+     completes once; restore TV-FED-04 + PartialView.
+  6. **7b real-CLI single-node lifecycle** — init → fed init → put → ls → stat → get
+     → sync-mode → mv → scan → rebuild-catalog → rm → passwd, real exit codes +
+     on-disk state at each step.
+- **Two test seams (for the e2e):** `cli.SetTestGCProbe` (overrides only the gc
+  reachability ping; real PlanFederated refusal logic runs; nil=production) and
+  `repo.go newTSClient` (injects tailscale status into the real preflightNode path;
+  default=production). Both test-only + unit-tested for the nil/default=production
+  property.
+- **SPEC §13 clarification:** fed_id is the hash of a canonically-constructed seq-0
+  init entry, independent of the live WAL tail (not an empty-WAL precondition).
+
+This completes the Blocks 3–4 federation feature set (tasks 27–50).
 
 ### Fixed
 - **`vault stat|get|mv <id>` no longer reports a silent miss under a partial view

@@ -23,6 +23,18 @@ import (
 	"github.com/Ibtesam-Mahmood/tailvault/internal/wal"
 )
 
+// testGCProbe, when non-nil, replaces the real tailscale ping in the FEDERATED gc
+// all-members reachability gate so the multi-node harness can drive `gc`
+// end-to-end (incl. the password-gate refusal proof, fix-46.A) without a real
+// node. Test-only — nil in production; set/cleared by the Block-4 suite via
+// SetTestGCProbe. Mirrors SetTestGateVerifier (transport-only stub: the real
+// PlanFederated gates + gateLocation run unchanged).
+var testGCProbe func(ctx context.Context, m catalog.Member) error
+
+// SetTestGCProbe installs (nil clears) the federated-gc reachability probe
+// override. Test-only.
+func SetTestGCProbe(fn func(ctx context.Context, m catalog.Member) error) { testGCProbe = fn }
+
 func newGCCmd() *cobra.Command {
 	var dryRun bool
 	var passwordFile string
@@ -162,6 +174,9 @@ func runFederatedGC(ctx context.Context, out io.Writer, be backend.Backend, loc 
 	}
 	ts := tailscale.New()
 	probe := func(ctx context.Context, m catalog.Member) error { return ts.Ping(ctx, m.Node) }
+	if testGCProbe != nil {
+		probe = testGCProbe // test-only: drive federated gc without a real node
+	}
 	actor, err := whoisSelf(ctx)
 	if err != nil || actor == "" {
 		actor = gitEmail()
