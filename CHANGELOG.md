@@ -6,6 +6,16 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.80 — 2026-06-11
+
+Phase 4 (test-doc) — record why restore-identity's PartialView→refuse test lives in task-50.
+
+- `vault_restore_identity_test.go`: inline NOTE documenting that the command-level
+  member-down PartialView→refuse case (qa-review review-48 LOW, non-blocking) can't be
+  a unit test here — taildrive `Stat` reads a missing member as reachable, so a local
+  fixture can't simulate a down member. The actual assertion is handed to task-50's
+  down-member matrix (stub backends toggle reachability).
+
 ## v0.0.79 — 2026-06-11
 
 Phase 4 (fix-49 / LOW 49.1) — `track` vault-mode refuses reserved internal areas.

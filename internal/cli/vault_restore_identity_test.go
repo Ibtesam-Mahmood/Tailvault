@@ -186,6 +186,14 @@ func TestVaultRestoreIdentityFederatedNoCollision(t *testing.T) {
 	}
 }
 
+// NOTE: the command-level PartialView→refuse property (member down → restore
+// refused TV-FED-01/exit6) is deliberately NOT unit-tested here: a taildrive
+// (local) member's reachability cannot be toggled in-process — Taildrive.Stat
+// treats a missing file as data, not a node error, so a passive mount always
+// reads "reachable". That property is covered by review-32 at the resolver level
+// (stub probes) and is handed to task-50's down-member matrix (stub backends that
+// can simulate unreachability) per the review-48 follow-up.
+
 // TestVaultRestoreIdentityWrongTargetPath: a target path absent from the catalog
 // is a clean error, not a panic (LOW 48.3).
 func TestVaultRestoreIdentityWrongTargetPath(t *testing.T) {
