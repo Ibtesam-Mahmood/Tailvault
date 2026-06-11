@@ -6,6 +6,27 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.84 — 2026-06-11
+
+### Added
+- **`vault rm` — gated deletion (SPEC v2 §10/§16, task-45).** The only way a manual
+  file dies (D14). Resolves the LIVE home (follows `moved_to` → deletes the real
+  bytes at the new home, never the forwarder stub); confirms (interactive y/N or
+  `--yes`; non-TTY without `--yes` → TV-CFG-01); password-gated; WAL lifecycle
+  intent → last-referent blob delete → catalog remove → done. The blob is deleted
+  only when this entry is its last referent on the node (content-addressed sharing).
+  git-mode → loud warning (referencing repos hard-fail on next pull). The WAL done
+  record carries the deleted identity (the last audit trace); `--json` exposes
+  genesis, plain text omits it (filename privacy). Flags `--yes`, `--password-file`,
+  `--json`.
+- **`vault sync-mode <path|id> <git|manual>` — gated mode flip (task-45).**
+  Password-gated, WAL-locked. `manual→git` re-hashes on the node (re-homes a drifted
+  object under its TRUE content hash) and stamps `last_scanned`; `git→manual` exempts
+  the blob from gc forever (re-asserted end-to-end via `gc.PlanFederated`). Unknown
+  mode → TV-CFG-01; setting the current mode is an idempotent no-op (no gate, no
+  intent). User input is validated against the CLI-settable set {git, manual} —
+  honoring the open enum D15 without a closed list in the catalog package.
+
 ## v0.0.83 — 2026-06-11
 
 ### Added

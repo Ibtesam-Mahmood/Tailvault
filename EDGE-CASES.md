@@ -653,3 +653,40 @@
   The ONLY client-buffered path is the rare manual-drift re-home (Get→buf→Put under
   the true hash); the primary transfer is always peer-to-peer.
 - **Follow-up:** node-side copy primitive for the drift re-home is a future optimization.
+
+- **Date / Task:** 2026-06-11 / task-45 (vault rm — last-referent delete)
+- **Edge case:** when does rm actually delete the blob bytes vs only the catalog
+  entry?
+- **Decision:** chose — the blob is deleted ONLY when this entry is the last referent
+  of that sha on the node (content-addressed sharing); otherwise just the catalog
+  entry is dropped (the bytes are still needed by another entry). rm runs the
+  last-referent check + delete under the delete WAL intent.
+- **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-45 (vault rm — of a moved file)
+- **Edge case:** rm targeting a file that has been moved to another member.
+- **Decision:** chose — target by ID (or the new path) → resolves the LIVE home and
+  deletes the real bytes there; the source's `moved_to` forwarder record is left in
+  place (journal gc owns stub cleanup). rm by the STALE old path → TV-OBJ (the entry
+  is genuinely gone from that catalog). Supported targeting is by ID or current path.
+- **Follow-up:** old-path→forwarder resolution is a possible follow-up.
+
+- **Date / Task:** 2026-06-11 / task-45 (vault rm — same-sha-vs-rm race) [threat-model]
+- **Edge case:** WAL-as-lock is keyed by file ID (BlobRefs=[id]), not by sha. A
+  concurrent `put` of the SAME content mints a DIFFERENT id (new genesis), so its
+  intent does not share a blob-ref and is NOT serialized against rm's last-referent
+  delete.
+- **Decision:** punted — single-process is consistent (re-read-under-intent gives a
+  coherent snapshot); the cross-process same-sha-vs-rm race needs sha-aware locking
+  or a re-check-before-delete hardening. Did NOT pollute BlobRefs with a sha
+  (gc/resolver read BlobRefs as file ids).
+- **Follow-up:** task-51 threat-model (sha-aware locking / re-check-before-delete).
+
+- **Date / Task:** 2026-06-11 / task-45 (vault sync-mode — manual→git on drift)
+- **Edge case:** flipping a drifted manual file to git (stored bytes ≠ recorded sha).
+- **Decision:** chose — `manual→git` re-hashes on the node and re-homes the object
+  under its TRUE content hash (stays content-addressed), adopts the fresh sha + stamps
+  `last_scanned` (so gc/verify never reason from a stale sha on a fresh-git file).
+  `git→manual` makes gc skip the blob forever (re-asserted via gc.PlanFederated).
+  Unknown mode → TV-CFG-01; same mode → idempotent no-op.
+- **Follow-up:** none
