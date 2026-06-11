@@ -6,6 +6,15 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.59 — 2026-06-11
+
+Phase 3 (task-33/34 review fix, SG-3/F4) — wire `wal.ErrChainBroken` →
+`tserr.FedChainBrokenErr` (TV-FED-03, exit bucket 6) at the `vault init` (Bootstrap)
+and `vault scan` (Diff + Apply) command boundaries, replacing the exit-1 placeholder.
+Closes the last WS-A ship-gate — a broken WAL chain now surfaces as the correct
+partial-view exit code (hard invariant). `TestVaultChainBrokenIsTVFED03` tampers a
+2-entry WAL and asserts both commands return TV-FED-03 + exit 6.
+
 ## v0.0.58 — 2026-06-11
 
 Phase 4 (task-39 part — fed.BackendQuerier, pulled forward) — the concrete

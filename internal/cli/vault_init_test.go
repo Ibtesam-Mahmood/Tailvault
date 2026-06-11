@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,7 +10,63 @@ import (
 
 	"github.com/Ibtesam-Mahmood/tailvault/internal/catalog"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/locations"
+	"github.com/Ibtesam-Mahmood/tailvault/internal/tserr"
 )
+
+// TestVaultChainBrokenIsTVFED03 wires F4/SG-3: a tampered WAL hash-chain must
+// surface as TV-FED-03 (exit bucket 6) at the vault init/scan boundary, not a
+// generic exit-1 error.
+func TestVaultChainBrokenIsTVFED03(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	store := t.TempDir()
+	// Two files → two WAL entries (seq 0,1) so tampering seq 0 breaks seq 1's
+	// prev_hash link (a lone genesis entry has no successor to validate it).
+	writeStoreFile(t, store, "a.txt", "alpha")
+	writeStoreFile(t, store, "b.txt", "bravo")
+	registerLocalLocation(t, "loc", store)
+	if _, err := runVault(t, "vault", "init", "loc"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	// Tamper seq-0's entry bytes while keeping it valid TOML (op_type value),
+	// so it still decodes but its hash no longer matches seq-1's prev_hash.
+	wal0 := filepath.Join(store, "meta", "wal", "000000000000.toml")
+	raw, err := os.ReadFile(wal0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tampered := bytes.Replace(raw, []byte(`op_type = "ingest"`), []byte(`op_type = "ingesX"`), 1)
+	if bytes.Equal(raw, tampered) {
+		t.Fatal("tamper no-op: op_type token not found in seq-0 entry")
+	}
+	if err := os.WriteFile(wal0, tampered, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	assertTVFED03 := func(label string, err error) {
+		t.Helper()
+		if err == nil {
+			t.Fatalf("%s: expected a chain-broken error", label)
+		}
+		var te *tserr.Error
+		if !errors.As(err, &te) || te.Code != tserr.FedChainBroken {
+			t.Fatalf("%s: want TV-FED-03, got %v", label, err)
+		}
+		if got := tserr.ExitCodeFor(err); got != 6 {
+			t.Fatalf("%s: exit code = %d, want 6", label, got)
+		}
+	}
+
+	// vault init re-reads the WAL up front → detects the break immediately.
+	_, err = runVault(t, "vault", "init", "loc")
+	assertTVFED03("vault init", err)
+
+	// vault scan only touches the WAL when it has catch-up work to apply, so
+	// introduce drift; Apply's AppendIntent then verifies (and rejects) the chain.
+	writeStoreFile(t, store, "c.txt", "charlie")
+	_, err = runVault(t, "vault", "scan", "loc", "--prune")
+	assertTVFED03("vault scan", err)
+}
 
 // registerLocalLocation registers a taildrive-style location whose base_path is a
 // local directory (locally accessible — the bootstrap-supported case).

@@ -126,12 +126,12 @@
   location has no locally-accessible root; and a wal.ErrChainBroken at the command
   boundary should map to TV-FED-03 (exit 6), whose tserr constructor is owned by
   task-32.
-- **Decision:** punted — SSH remote bootstrap returns a clear TV-CFG error
-  ("not yet supported; run on a taildrive/local root") (DG-33.1); chain-break
-  currently surfaces as the plain wal error (exit 1) until task-32's TV-FED tserr
-  is wired in on integration.
-- **Follow-up:** GH candidate (SSH remote bootstrap); wire TV-FED-03 mapping at
-  integration.
+- **Decision:** punted (SSH) + RESOLVED (chain-break mapping, F4/SG-3) — SSH remote
+  bootstrap returns a clear TV-CFG error ("not yet supported; run on a taildrive/
+  local root") (DG-33.1). The chain-break mapping is now WIRED: vault init/scan map
+  wal.ErrChainBroken → tserr.FedChainBrokenErr (TV-FED-03, exit 6) now that task-32's
+  tserr is on integration; TestVaultChainBrokenIsTVFED03 asserts exit 6 for both.
+- **Follow-up:** GH candidate (SSH remote bootstrap). TV-FED-03 mapping done.
 
 - **Date / Task:** 2026-06-11 / task-30 (internal/identity)
 - **Edge case:** the genesis canonical form (§11) is DOUBLE-quoted explicit byte

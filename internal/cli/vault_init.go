@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -108,10 +109,11 @@ func runVaultInit(cmd *cobra.Command, name string, dryRun, doSelect bool) error 
 		if before > 0 {
 			fmt.Fprintln(cmd.ErrOrStderr())
 		}
-		// NOTE: a wal.ErrChainBroken should map to TV-FED-03 (exit 6) at this
-		// boundary; that tserr constructor is introduced by task-32 (TV-FED
-		// codes) and will be wired in on integration. Until then it surfaces as
-		// the plain wal error (exit 1). See handoff/EDGE-CASES.
+		// A WAL hash-chain break is a federation integrity failure (TV-FED-03,
+		// exit bucket 6) — not a generic exit-1 error (F4/SG-3).
+		if errors.Is(err, wal.ErrChainBroken) {
+			return tserr.FedChainBrokenErr(loc.Node, err)
+		}
 		return fmt.Errorf("vault init: %w", err)
 	}
 	if before > 0 {

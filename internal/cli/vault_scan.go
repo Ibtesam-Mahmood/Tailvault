@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -68,6 +69,9 @@ func runVaultScan(cmd *cobra.Command, name string, dryRun, prune, paranoid bool)
 	}
 	changes, err := ingest.Diff(ctx, root, ig, cat, paranoid, nil)
 	if err != nil {
+		if errors.Is(err, wal.ErrChainBroken) {
+			return tserr.FedChainBrokenErr(loc.Node, err)
+		}
 		return fmt.Errorf("vault scan: %w", err)
 	}
 
@@ -86,6 +90,9 @@ func runVaultScan(cmd *cobra.Command, name string, dryRun, prune, paranoid bool)
 	log := &wal.Log{B: backend.NewFSBackend(root)}
 	applied, skipped, err := ingest.Apply(ctx, log, cat, catPath, loc.Node, initActor(cmd), toApply, nil)
 	if err != nil {
+		if errors.Is(err, wal.ErrChainBroken) {
+			return tserr.FedChainBrokenErr(loc.Node, err)
+		}
 		return fmt.Errorf("vault scan: %w", err)
 	}
 
