@@ -1,16 +1,25 @@
 package cli
 
 import (
+	"bytes"
+	"context"
+	"errors"
 	"fmt"
+	"io"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
 
+	"github.com/Ibtesam-Mahmood/tailvault/internal/backend"
+	"github.com/Ibtesam-Mahmood/tailvault/internal/catalog"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/config"
+	"github.com/Ibtesam-Mahmood/tailvault/internal/fed"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/gc"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/gitglue"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/lock"
+	"github.com/Ibtesam-Mahmood/tailvault/internal/tailscale"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/tserr"
+	"github.com/Ibtesam-Mahmood/tailvault/internal/wal"
 )
 
 func newGCCmd() *cobra.Command {
@@ -47,16 +56,29 @@ func newGCCmd() *cobra.Command {
 			keep := gc.BuildKeepSet(branchLocks)
 			preserve := gc.BuildPreserveSet(branchLocks)
 
-			stored, err := be.List(cmd.Context(), "objects/")
+			ctx := cmd.Context()
+			stored, err := be.List(ctx, "objects/")
 			if err != nil {
 				return err
 			}
-			plan := gc.PlanSweep(stored, keep, preserve)
-
 			out := cmd.OutOrStdout()
+
+			// Federation detection: a vault is federated when its catalog carries a
+			// fed_id. A federated gc engages the three federation gates (D13/D14/D27);
+			// a non-federated vault keeps the exact v1 behavior.
+			cat, err := readCatalogMaybe(ctx, be)
+			if err != nil {
+				return tserr.ConfigErr("gc: read catalog", err)
+			}
+			if cat != nil && cat.Federation.FedID != "" {
+				return runFederatedGC(ctx, out, be, cat, stored, keep, preserve, dryRun)
+			}
+
+			// Non-federated (v1) path — unchanged.
+			plan := gc.PlanSweep(stored, keep, preserve)
 			for _, sha := range plan.Eligible {
 				size := int64(-1)
-				if m, e := be.Stat(cmd.Context(), "objects/"+sha); e == nil {
+				if m, e := be.Stat(ctx, "objects/"+sha); e == nil {
 					size = m.Size
 				}
 				fmt.Fprintf(out, "delete objects/%s (%d bytes)\n", sha, size)
@@ -68,7 +90,7 @@ func newGCCmd() *cobra.Command {
 				fmt.Fprintln(out, "(dry-run: nothing deleted)")
 				return nil
 			}
-			n, err := gc.Sweep(cmd.Context(), be, plan, false)
+			n, err := gc.Sweep(ctx, be, plan, false)
 			if err != nil {
 				return err
 			}
@@ -104,4 +126,102 @@ func branchLocks(root string) (map[string]*lock.Lock, error) {
 		out[br] = l
 	}
 	return out, nil
+}
+
+// readCatalogMaybe reads the home node's catalog over the backend, returning
+// (nil, nil) when there is none — a non-federated v1 vault.
+func readCatalogMaybe(ctx context.Context, be backend.Backend) (*catalog.Catalog, error) {
+	var buf bytes.Buffer
+	if err := be.Get(ctx, "meta/catalog.toml", &buf); err != nil {
+		if errors.Is(err, backend.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return catalog.Parse(buf.Bytes())
+}
+
+// runFederatedGC engages the three federation gates and journals the sweep,
+// mapping the engine's plain errors to tserr at the boundary (§8): the
+// all-members gate → TV-FED-02 (exit 6), a broken WAL chain → TV-FED-03 (exit 6).
+func runFederatedGC(ctx context.Context, out io.Writer, be backend.Backend, cat *catalog.Catalog,
+	stored []string, keep, preserve gc.KeepSet, dryRun bool) error {
+	roster, err := fed.FromCatalog(cat)
+	if err != nil {
+		return tserr.ConfigErr("gc: read federation roster", err)
+	}
+	ts := tailscale.New()
+	probe := func(ctx context.Context, m catalog.Member) error { return ts.Ping(ctx, m.Node) }
+	actor, err := whoisSelf(ctx)
+	if err != nil || actor == "" {
+		actor = gitEmail()
+	}
+	fctx := &gc.FedContext{
+		Backend:        be,
+		Roster:         roster,
+		Probe:          probe,
+		Cat:            cat,
+		Log:            &wal.Log{B: be},
+		Actor:          actor,
+		PersistCatalog: persistCatalogOverBackend(be),
+	}
+
+	p, err := gc.PlanFederated(ctx, fctx, stored, keep, preserve)
+	if err != nil {
+		return mapFedGCErr(cat.Node, err)
+	}
+
+	for _, sha := range p.Eligible {
+		size := int64(-1)
+		if m, e := be.Stat(ctx, "objects/"+sha); e == nil {
+			size = m.Size
+		}
+		fmt.Fprintf(out, "delete objects/%s (%d bytes)\n", sha, size)
+	}
+	fmt.Fprintf(out, "gc: %d eligible, %d kept, %d preserved, %d skipped (in-flight ops)\n",
+		len(p.Eligible), p.Kept, p.Preserved, len(p.SkippedPending))
+	for _, sha := range p.SkippedPending {
+		fmt.Fprintf(out, "skip objects/%s (pending WAL op) — re-run gc after `tailvault ops` clears them\n", sha)
+	}
+
+	if dryRun {
+		fmt.Fprintln(out, "(dry-run: nothing deleted)")
+		return nil
+	}
+	rep, err := gc.SweepFederated(ctx, fctx, p, false)
+	if err != nil {
+		return mapFedGCErr(cat.Node, err)
+	}
+	fmt.Fprintf(out, "gc: deleted %d blob(s), %d re-skipped (raced ops)\n", rep.Deleted, len(rep.SkippedPending))
+	return nil
+}
+
+// mapFedGCErr maps the gc engine's plain errors to tserr codes at the boundary.
+func mapFedGCErr(node string, err error) error {
+	var nam *gc.NeedAllMembersError
+	if errors.As(err, &nam) {
+		return tserr.FedNeedAllMembersErr("gc", nam.Unreachable, err)
+	}
+	if errors.Is(err, wal.ErrChainBroken) {
+		return tserr.FedChainBrokenErr(node, err)
+	}
+	return err
+}
+
+// persistCatalogOverBackend overwrites the single-key catalog after a sweep.
+// backend.Put dedups by key (a plain Put of an existing key no-ops), so overwrite
+// is Delete-then-Put. This is non-atomic (a crash between leaves no catalog —
+// recorded in EDGE-CASES as an interim until a backend overwrite primitive
+// lands); the gc WAL op stays "intent" on failure so `tailvault ops` can recover.
+func persistCatalogOverBackend(be backend.Backend) func(context.Context, *catalog.Catalog) error {
+	return func(ctx context.Context, c *catalog.Catalog) error {
+		bs, err := catalog.Encode(c)
+		if err != nil {
+			return err
+		}
+		if err := be.Delete(ctx, "meta/catalog.toml"); err != nil {
+			return err
+		}
+		return be.Put(ctx, "meta/catalog.toml", bytes.NewReader(bs))
+	}
 }

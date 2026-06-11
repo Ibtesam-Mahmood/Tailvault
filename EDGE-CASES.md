@@ -298,6 +298,30 @@
   absence; a reachable-but-empty member simply contributes no match.
 - **Follow-up:** none
 
+- **Date / Task:** 2026-06-11 / task-36 (federated gc) — CROSS-CUTTING
+- **Edge case:** `backend.Put` dedups by key existence on BOTH FSBackend and SSH
+  (`if Stat(key).Exists { return nil }`). A single fixed-key file like
+  `meta/catalog.toml` therefore CANNOT be overwritten by `Put` alone — a second
+  Put is a silent no-op. This affects any catalog UPDATE over a backend (gc's
+  post-sweep catalog write, and task-33/34's catalog mutations).
+- **Decision:** chose — gc does NOT own catalog-overwrite-over-backend: it takes
+  a `FedContext.PersistCatalog` seam injected by the command layer, which owns the
+  overwrite mechanism (Delete+Put, or whatever task-33/34 established). Flagged to
+  coder-a to confirm their catalog updates don't silently no-op via Encode→Put.
+- **Follow-up:** GH/Block-5 candidate — a create-exclusive or explicit-overwrite
+  backend primitive for mutable single-key files (catalog) vs append-only objects.
+
+- **Date / Task:** 2026-06-11 / task-36 (federated gc)
+- **Edge case:** gate ordering — if the reachability gate ran after candidate
+  marking, a partial view could shape a doomed set before the abort.
+- **Decision:** chose — strict order in PlanFederated: all-members gate FIRST
+  (nothing computed past a failed gate) → git-only candidate scoping (allow-list:
+  only sync_mode=="git"; manual/unknown never collectable, D14/D15) → v1 keep-set
+  subtraction → pending-intent skip by file id (D13). Sweep re-checks pending at
+  execution time and the gc WAL op locks the doomed ids (WAL-as-lock), so a
+  concurrent move and gc on one blob serialize. Deletion bias is always "keep".
+- **Follow-up:** none
+
 - **Date / Task:** 2026-06-11 / task-39 part (fed.BackendQuerier, pulled forward)
 - **Edge case:** distinguishing a cross-member move (forwarding pointer) from a
   local rename when reading move ops out of a member's WAL.

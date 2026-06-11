@@ -6,6 +6,22 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.62 — 2026-06-11
+
+Phase 4 (task-36) — federated garbage collection. `internal/gc/fed.go`
+(`PlanFederated`/`SweepFederated`) + `vault gc` federation wiring.
+
+- gc invariants (hard): only touches `sync_mode=git` objects, skips
+  pending-intent blobs (via `wal.Pending`), and requires ALL members reachable
+  before sweeping (partial view → refuse, never delete). `-race` clean.
+- DEV-36.1: federated entry points named `PlanFederated`/`SweepFederated` (the
+  sketch's `Plan`/`Sweep` clashed with the existing v1 `Plan` type / `Sweep` func;
+  v1 untouched).
+- DEV-36.2 (flagged, Block-5 candidate): catalog overwrite over a backend uses
+  Delete-then-Put behind a `PersistCatalog` seam (backend `Put` dedups by key, so
+  it can't overwrite) — a non-atomic interim window; a real overwrite primitive is
+  a follow-up. Same pattern used by task-33/34 catalog updates (under review).
+
 ## v0.0.61 — 2026-06-11
 
 Phase 4 (DEV-46.6) — extend the WAL op_type enum with `passwd` (frozen-SPEC §10
