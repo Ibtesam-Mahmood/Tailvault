@@ -73,6 +73,13 @@ func runTrackVault(cmd *cobra.Command, target string) error {
 			rels = append(rels, k)
 		}
 	} else {
+		// An exact path overrides a glob ignore (D22) but NEVER the vault's own
+		// structural areas: meta/objects/refs and the ignore file are not trackable
+		// content (LOW 49.1). The glob branch already skips these via isReservedKey;
+		// guard the exact-path branch too so `track loc/meta/catalog.toml` is refused.
+		if isReservedKey(pat) {
+			return tserr.ConfigErr("track: "+pat+" is a vault-internal path (meta/objects/refs) and cannot be tracked", nil)
+		}
 		rels = []string{pat} // exact path: intent beats a glob ignore (D22)
 		if ig.Match(pat, nil) {
 			ignoredOverride = append(ignoredOverride, pat)

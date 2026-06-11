@@ -92,6 +92,22 @@ func TestTrackVaultIdempotent(t *testing.T) {
 	}
 }
 
+func TestTrackVaultRejectsReservedExactPath(t *testing.T) {
+	// An exact path overrides .tailvaultignore (D22) but must NEVER let a user
+	// register a vault-internal structural file (LOW 49.1). The guard fires before
+	// any disk-presence check, so the path need not exist.
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	store := t.TempDir()
+	registerLocalLocation(t, "loc", store)
+
+	for _, p := range []string{"meta/catalog.toml", "objects/abc", "refs/heads/main", ".tailvaultignore"} {
+		out, err := runVault(t, "track", "loc/"+p)
+		if err == nil {
+			t.Errorf("tracking reserved path %q must be refused, got success: %s", p, out)
+		}
+	}
+}
+
 func TestTrackVaultMissingPath(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	store := t.TempDir()

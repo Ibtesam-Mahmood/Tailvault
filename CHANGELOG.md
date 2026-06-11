@@ -6,6 +6,14 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.79 — 2026-06-11
+
+Phase 4 (fix-49 / LOW 49.1) — `track` vault-mode refuses reserved internal areas.
+
+- The `track` exact-path branch now refuses reserved areas (`meta`/`objects`/`refs` +
+  the ignore file), matching the glob branch — previously an exact path like
+  `track loc/meta/catalog.toml` could register an internal file.
+
 ## v0.0.78 — 2026-06-11
 
 Phase 4 (fix-42) — `vault get` fails closed on integrity mismatch for any non-manual mode.
