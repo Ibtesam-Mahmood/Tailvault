@@ -12,6 +12,8 @@ import (
 	"github.com/Ibtesam-Mahmood/tailvault/internal/backend"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/catalog"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/fed"
+	"github.com/Ibtesam-Mahmood/tailvault/internal/identity"
+	"github.com/Ibtesam-Mahmood/tailvault/internal/ingest"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/tserr"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/wal"
 )
@@ -395,5 +397,61 @@ func TestVaultMv_IdempotentResume(t *testing.T) {
 	}
 	if _, ok := mvReadCat(t, dirs["home-pi"]).Find("media/a.txt"); ok {
 		t.Error("resume must complete the source demotion")
+	}
+}
+
+// TestVaultMv_CrossMoveGitRebuildsFaithfully is the #44 (fix-35-D-resid) SG-8 gate:
+// a GIT-mode file cross-moved via the REAL mvCross must, when the dest catalog is
+// lost and rebuilt from its WAL alone (ingest.ProjectCatalog), come back as GIT
+// (not the old §9c manual default) with its size, id, genesis, sha and path intact.
+// A manual downgrade here would be an integrity-semantics regression: gc would
+// exempt the file forever and verify would treat a corrupt blob as legitimate
+// drift. The dest WAL's OpMove record is the file's ONLY trace on the dest, so it
+// must journal sync_mode+size (a22efbb) — this drives the real writer→projector
+// round-trip that the genesis-args-only assertion can't.
+func TestVaultMv_CrossMoveGitRebuildsFaithfully(t *testing.T) {
+	ctx := context.Background()
+	dirs := newFed(t, "home-pi", "office-nas")
+	content := []byte("git payload that moves across members\n")
+	// A GIT-mode file with its blob at objects/<sha> on the source.
+	f := realFile(t, dirs["home-pi"], "media/a.bin", content, content, catalog.SyncModeGit)
+	writeFedVault(t, dirs, "home-pi", []catalog.File{f})
+	writeFedVault(t, dirs, "office-nas", nil)
+
+	if _, err := run("vault", "mv", "home-pi/media/a.bin", "office-nas/clips/a.bin"); err != nil {
+		t.Fatalf("cross move: %v", err)
+	}
+
+	// Rebuild the dest catalog from its WAL alone (the `vault rebuild-catalog` path).
+	destDir := dirs["office-nas"]
+	recs, err := (&wal.Log{B: backend.NewTaildrive(destDir)}).Read(ctx)
+	if err != nil {
+		t.Fatalf("read dest wal: %v", err)
+	}
+	rebuilt, err := ingest.ProjectCatalog(mvReadCat(t, destDir), recs, "office-nas")
+	if err != nil {
+		t.Fatalf("project dest catalog: %v", err)
+	}
+
+	row, ok := rebuilt.Find("clips/a.bin")
+	if !ok {
+		t.Fatal("rebuilt catalog is missing the cross-moved file")
+	}
+	if row.SyncMode != catalog.SyncModeGit {
+		t.Errorf("rebuilt sync_mode = %q, want git (a manual downgrade exempts a git file from gc forever)", row.SyncMode)
+	}
+	if row.Size != f.Size {
+		t.Errorf("rebuilt size = %d, want %d", row.Size, f.Size)
+	}
+	if row.ID != f.ID || row.SHA256 != f.SHA256 || catalog.Genesis(row.Genesis) != f.Genesis {
+		t.Errorf("rebuilt identity not preserved: id=%s sha=%s genesis=%+v", row.ID, row.SHA256, row.Genesis)
+	}
+	// The rebuilt row's id self-certifies against its projected genesis (tamper guard).
+	g := identity.Genesis{
+		ContentSHA256: row.Genesis.ContentSHA256, OriginalPath: row.Genesis.OriginalPath,
+		IngestOpID: row.Genesis.IngestOpID, OriginNode: row.Genesis.OriginNode,
+	}
+	if ok, _ := identity.Verify(g, row.ID); !ok {
+		t.Errorf("rebuilt cross-moved row id %s does not self-certify its genesis", row.ID)
 	}
 }

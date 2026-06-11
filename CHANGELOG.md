@@ -6,6 +6,18 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.98 — 2026-06-11
+
+### Added
+- **#44 SG-8 gate test — cross-moved GIT file rebuilds faithfully (fix-35-D-resid
+  part b).** `TestVaultMv_CrossMoveGitRebuildsFaithfully` drives a GIT-mode file
+  through the REAL `vault mv` (mvCross), then rebuilds the dest catalog from its WAL
+  alone via `ingest.ProjectCatalog`, and asserts the moved-in row comes back
+  sync_mode=git (not the old §9c manual downgrade) with size, id, genesis, sha and
+  path intact + self-certifying. This is the real-writer→projector round-trip that
+  the prior genesis-args-only assertion couldn't provide — it pins the integrity
+  semantics the writer fix (a22efbb) delivered. Closes the SG-8 #44 gate.
+
 ## v0.0.97 — 2026-06-11
 
 ### Fixed
