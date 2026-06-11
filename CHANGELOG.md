@@ -6,6 +6,15 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.65 — 2026-06-11
+
+Phase 4 (SG-6 part 2 — gc call-site) — `vault gc`'s `persistCatalogOverBackend` now
+uses `backend.PutOverwrite` (atomic temp+fsync+rename / SSH mv) instead of the
+non-atomic Delete-then-Put. Closes the gc call-site of ship-gate SG-6 (atomic on
+every backend, local and remote, no special-casing). tasks 33/34 were already clean
+(local `catalog.WriteAtomic`); the remaining SG-6 call-site is coder-c's remote
+passwd rotation (task-46 part-2b-ii).
+
 ## v0.0.64 — 2026-06-11
 
 Phase 4 (task-37 support) — `ingest.ReplayOp` replay seam. Lets `ops retry`

@@ -208,20 +208,17 @@ func mapFedGCErr(node string, err error) error {
 	return err
 }
 
-// persistCatalogOverBackend overwrites the single-key catalog after a sweep.
-// backend.Put dedups by key (a plain Put of an existing key no-ops), so overwrite
-// is Delete-then-Put. This is non-atomic (a crash between leaves no catalog —
-// recorded in EDGE-CASES as an interim until a backend overwrite primitive
-// lands); the gc WAL op stays "intent" on failure so `tailvault ops` can recover.
+// persistCatalogOverBackend atomically overwrites the single-key catalog after a
+// sweep via backend.PutOverwrite (temp+fsync+rename / SSH mv) — atomic on every
+// backend, so a crash leaves the old or the new catalog, never neither (SG-6 fix;
+// replaces the earlier non-atomic Delete-then-Put). The gc WAL op additionally
+// stays "intent" on failure so `tailvault ops` can recover.
 func persistCatalogOverBackend(be backend.Backend) func(context.Context, *catalog.Catalog) error {
 	return func(ctx context.Context, c *catalog.Catalog) error {
 		bs, err := catalog.Encode(c)
 		if err != nil {
 			return err
 		}
-		if err := be.Delete(ctx, "meta/catalog.toml"); err != nil {
-			return err
-		}
-		return be.Put(ctx, "meta/catalog.toml", bytes.NewReader(bs))
+		return be.PutOverwrite(ctx, "meta/catalog.toml", bytes.NewReader(bs))
 	}
 }
