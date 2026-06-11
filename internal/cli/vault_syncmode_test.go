@@ -102,6 +102,22 @@ func TestVaultSyncMode_DriftedManualToGitReHomes(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dirs["home-pi"], "objects", nf.SHA256)); err != nil {
 		t.Errorf("object must exist under the fresh hash objects/%s: %v", nf.SHA256, err)
 	}
+	// Projection-sufficiency (fix-35-D): the OpSyncMode record must carry the
+	// re-hashed new_sha256 + last_scanned so heal's ProjectCatalog (which cannot
+	// re-hash) replays the flip with the correct sha, not the stale one.
+	recs, _ := (&wal.Log{B: backend.NewTaildrive(dirs["home-pi"])}).Read(context.Background())
+	var sm *wal.Rec
+	for i := range recs {
+		if recs[i].Entry.OpType == wal.OpSyncMode {
+			sm = &recs[i]
+		}
+	}
+	if sm == nil {
+		t.Fatal("no OpSyncMode record")
+	}
+	if sm.Entry.Args["new_sha256"] != nf.SHA256 || sm.Entry.Args["last_scanned"] == "" {
+		t.Errorf("OpSyncMode record not projection-sufficient: %v (want new_sha256=%s + last_scanned)", sm.Entry.Args, nf.SHA256)
+	}
 }
 
 func TestVaultSyncMode_GitToManualExemptsFromGC(t *testing.T) {

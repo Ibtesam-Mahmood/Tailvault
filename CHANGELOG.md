@@ -6,6 +6,22 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.88 — 2026-06-11
+
+### Fixed
+- **OpMove cross-dest + OpSyncMode records are now projection-sufficient (fix #41 /
+  35-D-writer, ship-blocker).** The cross-move DEST OpMove record now carries the
+  full genesis preimage (`original_path` / `ingest_op_id` / `origin_node` alongside
+  the existing `content_sha256`) so `ProjectCatalog` can rebuild the dest catalog
+  entry from the WAL alone (a cross-moved file has no OpIngest on the dest — this
+  record is its only trace). The OpSyncMode record now carries `new_sha256` +
+  `last_scanned` (the re-hash, a read-only `HashObject`, is reordered before the
+  immutable intent; the rehome mutation stays after it, preserving WAL-lock
+  ordering) so a drifted manual→git flip projects the fresh sha, not a stale one.
+  Both additive (op-id / wire contract unchanged); arg keys use the canonical
+  un-prefixed convention matching #40 / OpIngest. The projector half (applyOp +
+  the all-§10-op_type round-trip test) lands with fix #39.
+
 ## v0.0.87 — 2026-06-11
 
 ### Added

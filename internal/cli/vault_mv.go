@@ -336,12 +336,19 @@ func mvCross(ctx context.Context, cmd *cobra.Command, m mvCrossCtx) error {
 		BlobRefs:  []string{m.file.ID},
 		Actor:     initActor(cmd),
 		CreatedAt: now,
+		// The cross-moved file appears on the dest node ONLY via this record (there
+		// is no OpIngest for it here), so it must carry the FULL genesis preimage —
+		// id + the 4-field genesis + sha + dest_path — for heal's ProjectCatalog to
+		// rebuild the dest entry from the WAL alone (fix-35-D / projection-sufficiency).
 		Args: map[string]string{
 			"id":             m.file.ID,
 			"from":           m.srcMember,
 			"src_path":       m.file.Path,
 			"dest_path":      m.finalRel,
 			"content_sha256": m.file.SHA256,
+			"original_path":  m.file.Genesis.OriginalPath,
+			"ingest_op_id":   m.file.Genesis.IngestOpID,
+			"origin_node":    m.file.Genesis.OriginNode,
 		},
 	}
 	if err := appendMoveIntent(ctx, destLog, destIntent, m.destLoc.Node); err != nil {

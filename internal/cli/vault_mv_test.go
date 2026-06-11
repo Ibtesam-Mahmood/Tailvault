@@ -180,6 +180,14 @@ func TestVaultMv_CrossHappyPath(t *testing.T) {
 	if dst[0].Entry.Args["moved_to"] != "" {
 		t.Errorf("dest must not be a forwarder: %v", dst[0].Entry.Args)
 	}
+	// Projection-sufficiency (fix-35-D): the dest record is the file's ONLY trace on
+	// the dest node, so it must carry the full genesis preimage for ProjectCatalog.
+	da := dst[0].Entry.Args
+	if da["id"] != f.ID || da["content_sha256"] != f.Genesis.ContentSHA256 ||
+		da["original_path"] != f.Genesis.OriginalPath || da["ingest_op_id"] != f.Genesis.IngestOpID ||
+		da["origin_node"] != f.Genesis.OriginNode || da["dest_path"] != "clips/a.txt" {
+		t.Errorf("dest move record is not projection-sufficient: %v", da)
+	}
 
 	// The forwarding record is consumable: a querier hitting the OLD home reports
 	// the file as moved_to the new home (this is what lets resolution find a file

@@ -114,26 +114,14 @@ func runVaultSyncMode(cmd *cobra.Command, arg, modeArg string, fl syncFlags) err
 	}
 
 	now := time.Now().UTC()
-	opID := syncOpID(file.ID, mode)
-	intent := wal.Entry{
-		OpID:      opID,
-		OpType:    wal.OpSyncMode,
-		BlobRefs:  []string{file.ID},
-		Actor:     initActor(cmd),
-		CreatedAt: now,
-		Args: map[string]string{
-			"id":        file.ID,
-			"path":      file.Path,
-			"from_mode": file.SyncMode,
-			"to_mode":   mode,
-		},
-	}
-	log := &wal.Log{B: b}
-	if err := appendOpIntent(ctx, log, intent, loc.Node, "sync-mode"); err != nil {
-		return err
-	}
 
-	// Re-read live under the lock to mutate the authoritative entry.
+	// Read the live entry and compute the resulting sha/last_scanned BEFORE the WAL
+	// intent. A WAL entry is immutable (no post-hoc state, §10), so the OpSyncMode
+	// record must carry its FULL effect — including the re-hashed new_sha256 and
+	// last_scanned of a drifted manual→git flip — for heal's ProjectCatalog (a pure
+	// function that cannot re-hash) to replay it (fix-35-D / projection-sufficiency).
+	// HashObject is read-only, so computing it before the intent does not race the
+	// lock; the only mutation (rehome) stays after the intent.
 	cat, err := readCatalog(ctx, b)
 	if err != nil {
 		return tserr.NodeOfflineErr(loc.Node, err)
@@ -149,6 +137,7 @@ func runVaultSyncMode(cmd *cobra.Command, arg, modeArg string, fl syncFlags) err
 	newSHA := entry.SHA256
 	lastScanned := entry.LastScanned
 	rehashed := false
+	needRehome := false
 	if mode == catalog.SyncModeGit {
 		// manual → git: re-hash on the node so gc/verify never see a stale sha. A
 		// drifted manual file (true content hash != recorded sha) adopts its true
@@ -159,13 +148,38 @@ func runVaultSyncMode(cmd *cobra.Command, arg, modeArg string, fl syncFlags) err
 			return tserr.ObjMissingErr(identity.Short(file.ID), herr)
 		}
 		if trueHash != entry.SHA256 {
-			if err := rehomeDriftedObject(ctx, b, entry.SHA256, trueHash, loc.Node); err != nil {
-				return err
-			}
 			newSHA = trueHash
+			needRehome = true
 		}
 		lastScanned = now
 		rehashed = true
+	}
+
+	opID := syncOpID(file.ID, mode)
+	intent := wal.Entry{
+		OpID:      opID,
+		OpType:    wal.OpSyncMode,
+		BlobRefs:  []string{file.ID},
+		Actor:     initActor(cmd),
+		CreatedAt: now,
+		Args: map[string]string{
+			"id":           file.ID,
+			"path":         file.Path,
+			"from_mode":    file.SyncMode,
+			"to_mode":      mode,
+			"new_sha256":   newSHA, // resulting sha (= old unless a drift re-hash); projectable
+			"last_scanned": rfc(lastScanned),
+		},
+	}
+	log := &wal.Log{B: b}
+	if err := appendOpIntent(ctx, log, intent, loc.Node, "sync-mode"); err != nil {
+		return err
+	}
+
+	if needRehome {
+		if err := rehomeDriftedObject(ctx, b, entry.SHA256, newSHA, loc.Node); err != nil {
+			return err
+		}
 	}
 
 	updated := entry
