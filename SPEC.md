@@ -372,38 +372,47 @@ ascending**, stable across writes (mirror lock canonical form, §2).
 | `updated_at` | string | RFC3339 UTC `Z` — last catalog mutation for this file. |
 | `last_scanned` | string | RFC3339 UTC `Z` — last `vault scan` that re-hashed/verified the on-disk bytes (drives edited-vs-corrupt logic, H12). |
 
-### Sample (verbatim — paste into fixtures)
+### Sample (canonical form — the byte-exact `catalog.Encode` output, used as the fixture)
+
+> **Canonical rendering.** This is the **exact** output of `catalog.Encode`
+> (`pelletier/go-toml/v2` v2.2.2, the repo's TOML library, mirroring how
+> `internal/lock` renders §2). The canonical form therefore uses go-toml/v2's
+> native rendering: **single-quoted literal strings** and **bare (unquoted)
+> RFC3339 datetimes**. Task 28 pastes this block into `internal/catalog/testdata/`
+> and asserts `Parse → Encode` is byte-identical. (The other v2 samples below are
+> illustrative valid TOML; each implementing task freezes its own canonical bytes
+> via its encoder + testdata the same way.)
 
 ```toml
 version = 2
-vault_name = "root-pnp"
-node = "home-pi.tailnet-name.ts.net"
+vault_name = 'root-pnp'
+node = 'home-pi.tailnet-name.ts.net'
 
 [federation]
-fed_id = "5f3c9a1e7b8d2c40a16e9f0b3d4c5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d"
+fed_id = '5f3c9a1e7b8d2c40a16e9f0b3d4c5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d'
 
 [[federation.member]]
-name      = "home-pi"
-node      = "home-pi.tailnet-name.ts.net"
-joined_at = "2026-06-11T09:00:00Z"
-status    = "active"
+name = 'home-pi'
+node = 'home-pi.tailnet-name.ts.net'
+joined_at = 2026-06-11T09:00:00Z
+status = 'active'
 
 [[federation.member]]
-name      = "office-nas"
-node      = "100.92.14.7"
-joined_at = "2026-06-11T09:05:00Z"
-status    = "active"
+name = 'office-nas'
+node = '100.92.14.7'
+joined_at = 2026-06-11T09:05:00Z
+status = 'active'
 
 [[file]]
-id      = "30092d830e2641b447745655bbe4171675720a1aa8cf80e0ae3736e6e43111f0"
-genesis = { content_sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", original_path = "pnp/board.pdf", ingest_op_id = "0192f3a4b5c6d7e8f9a0b1c2d3e4f5a6", origin_node = "home-pi" }
-sha256       = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-path         = "pnp/board.pdf"
-sync_mode    = "manual"
-size         = 41231873
-created_at   = "2026-06-11T09:10:00Z"
-updated_at   = "2026-06-11T09:10:00Z"
-last_scanned = "2026-06-11T09:10:00Z"
+id = '30092d830e2641b447745655bbe4171675720a1aa8cf80e0ae3736e6e43111f0'
+genesis = {content_sha256 = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', original_path = 'pnp/board.pdf', ingest_op_id = '0192f3a4b5c6d7e8f9a0b1c2d3e4f5a6', origin_node = 'home-pi'}
+sha256 = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+path = 'pnp/board.pdf'
+sync_mode = 'manual'
+size = 41231873
+created_at = 2026-06-11T09:10:00Z
+updated_at = 2026-06-11T09:10:00Z
+last_scanned = 2026-06-11T09:10:00Z
 ```
 
 ### 9b. `.tailvaultignore` semantics

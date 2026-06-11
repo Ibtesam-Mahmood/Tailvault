@@ -6,6 +6,22 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.47 — 2026-06-11
+
+Phase 3 (task-28) — `internal/catalog`: parse/validate/canonical-write/atomic-update
+for the SPEC v2 §9 catalog (`meta/catalog.toml`).
+
+- `Catalog/File/Genesis/Federation/Member` types in frozen §9 field order; `Parse`/
+  `Validate` reject `version != 2` (`ErrIncompatibleVersion`; boundary → exit 2);
+  open `sync_mode` enum (D15, never closed-list validated).
+- `Canonicalize` (byte-wise Path sort, UTC timestamps) + deterministic `Encode`;
+  `Find`/`FindID`/`Upsert`/`Remove`; `WriteAtomic` (temp+fsync+rename+dir fsync) as
+  the single write seam, write-ahead ordering doc-commented for tasks 29/33/34.
+- SPEC.md §9 sample replaced with the exact `catalog.Encode` canonical output
+  (go-toml/v2: single-quoted literals + bare datetimes) so the byte-identical
+  round-trip holds literally; added a "Canonical rendering" note. Only the §9
+  sample block changed — all other §9–§16 rulings + the genesis test vector intact.
+
 ## v0.0.46 — 2026-06-11
 
 Phase 4 (task-40) — remote sha256 short-circuit; resolves accepted deviation
