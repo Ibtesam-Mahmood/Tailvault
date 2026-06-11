@@ -1,13 +1,17 @@
 package cli
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/Ibtesam-Mahmood/tailvault/internal/fed"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/identity"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/ingest"
+	"github.com/Ibtesam-Mahmood/tailvault/internal/locations"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/setup"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/tserr"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/wal"
@@ -110,14 +114,72 @@ func runVaultRestoreIdentity(cmd *cobra.Command, target string, src restoreSourc
 		return err
 	}
 
+	// Federation-wide collision guard (task-48): an id must never become live in
+	// two places. The engine's local FindID check is defense-in-depth; the
+	// authoritative guard fans out over the roster (task-32) here, in the command,
+	// right before the mutation. A standalone (un-federated) location has no other
+	// members to collide with, so the local guard alone suffices there.
+	if err := assertNoFederationCollision(ctx, id); err != nil {
+		return err
+	}
+
 	restored, err := ingest.RestoreIdentity(ctx, ingest.RestoreOpts{
 		Backend: be, Log: &wal.Log{B: be}, Cat: cat, Node: loc.Node, Actor: initActor(cmd),
 	}, rel, id, g)
 	if err != nil {
+		// A local same-catalog duplicate is the same integrity violation as a
+		// cross-member one → the federation collision code (exit 6), not a config error.
+		if errors.Is(err, ingest.ErrIDCollision) {
+			return tserr.FedIDCollisionErr(identity.Short(id), loc.Node, err)
+		}
 		return tserr.ConfigErr("restore-identity: "+err.Error(), err)
 	}
 	fmt.Fprintf(out, "restored: %s now carries id %s\n", restored.Path, identity.Short(restored.ID))
 	return nil
+}
+
+// assertNoFederationCollision hard-fails if id is already live anywhere in the
+// federation — restoring it would create two live claims to one identity
+// (task-48). It fans out over the roster via the resolution engine (task-32):
+//   - Found (at home or elsewhere) → collision → TV-FED-04 (exit 6).
+//   - PartialView → a member is unreachable, so absence (no collision) cannot be
+//     proven → TV-FED-01 (exit 6); the user must bring members online and retry.
+//   - Missing → no member holds the id → safe to proceed.
+//
+// A location with no federation roster (standalone vault) has no other members to
+// collide with; the engine's local FindID guard is then the only and sufficient
+// check, so a "no roster" discovery error is treated as "no collision".
+func assertNoFederationCollision(ctx context.Context, id string) error {
+	reg, err := locations.Load()
+	if err != nil {
+		return tserr.ConfigErr("restore-identity: load locations.toml", err)
+	}
+	roster, err := loadRoster(ctx, reg)
+	if err != nil {
+		return nil // un-federated location: no cross-member collision surface.
+	}
+	resolver := &fed.Resolver{
+		Roster: roster,
+		Q:      fed.NewBackendQuerier(backendForRegistry(reg)),
+		Probe:  memberProbe(reg),
+	}
+	res, err := resolver.Resolve(ctx, id, "")
+	if err != nil {
+		if errors.Is(err, wal.ErrChainBroken) {
+			return tserr.FedChainBrokenErr("", err) // exit 6
+		}
+		return err
+	}
+	switch res.Outcome {
+	case fed.FoundAtHome, fed.FoundElsewhere:
+		return tserr.FedIDCollisionErr(identity.Short(id), res.View.Member, nil)
+	case fed.PartialView:
+		return tserr.FedPartialViewErr(identity.Short(id), res.Reach.Unreachable, nil)
+	case fed.Missing:
+		return nil
+	default:
+		return fmt.Errorf("restore-identity: unexpected resolution outcome %s for %s", res.Outcome, identity.Short(id))
+	}
 }
 
 // loadGenesisSource reads the genesis record from EXACTLY one source flag.

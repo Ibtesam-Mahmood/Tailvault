@@ -684,6 +684,7 @@ ids        = ["30092d830e2641b447745655bbe4171675720a1aa8cf80e0ae3736e6e43111f0"
 | `TV-FED-01` | partial view — object not found among **reachable** members and **≥1 member unreachable** ("cannot prove absence") | bring the offline member(s) online and retry, or `tailvault ops`/cache to see last-known state | 6 |
 | `TV-FED-02` | a federation op that needs **ALL** members (gc) ran with **≥1 member unreachable** (D27/R3 gate) | bring all members online and retry; deletes never tolerate partial views | 6 |
 | `TV-FED-03` | WAL **hash-chain verification failed** (tamper / corruption) | inspect with chain-verify tooling (Block 5); restore the affected node's WAL from a clone/backup | 6 |
+| `TV-FED-04` | **id-collision on restore** — `vault restore-identity` found the original id already **live on a federation member**; restoring would create two live claims to one identity (task-48 guard, fan-out via §15 resolution; a same-catalog duplicate maps here too) | do not restore here — the id is not lost; resolve the existing claim first if it is the wrong one | 6 |
 | `TV-AUTH-01` | password missing/rejected on a mutating remote op (mv, rm, sync-mode change, remote gc, evict, roster writes incl. `fed join`/`leave`/`evict`) | re-run with the correct password, or reset the hash over SSH/physical access | 2 |
 
 ### Exit-code buckets (extends §5)

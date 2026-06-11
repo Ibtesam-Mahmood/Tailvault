@@ -6,6 +6,24 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.77 — 2026-06-11
+
+Phase 4 (fix-48 / SG-7) — federation-wide id-collision guard for `restore-identity`.
+
+- `restore-identity` now fans out over the roster (task-32 resolution engine) BEFORE
+  mutating and hard-fails if the original id is already live on any member — the
+  spec-mandated guard (task-48 lines 88-90/107/127) preventing two live claims to one
+  identity. Previously only the local catalog was checked.
+- New **TV-FED-04** (`internal/tserr`, exit bucket 6) for a confirmed id collision; the
+  engine's local same-catalog `ErrIDCollision` now maps here too (was a generic
+  TV-CFG-01/exit2 — addresses review LOW 48.2). PartialView (a member unreachable) →
+  TV-FED-01 (absence can't be proven, restore refused until members online);
+  un-federated location → local guard alone suffices.
+- `SPEC.md` §15: TV-FED-04 row (DEV-48.3 — 3rd additive §-amendment after DEV-46.6 §10,
+  DEV-48.2 §16). Tests: federation collision → TV-FED-04 + catalog untouched (required
+  test l.127); no-collision → proceeds; wrong-target → clean error; content-mismatch →
+  WARN + proceeds (LOW 48.3).
+
 ## v0.0.76 — 2026-06-11
 
 Phase 4 (task-42) — `vault get` (federated download + self-certifying pull receipts).

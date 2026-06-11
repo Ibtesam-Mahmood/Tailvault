@@ -26,6 +26,7 @@ const (
 	FedPartialView    Code = "TV-FED-01" // not found among reachable members; ≥1 unreachable ("cannot prove absence")
 	FedNeedAllMembers Code = "TV-FED-02" // op needs ALL members (gc) but ≥1 was unreachable
 	FedChainBroken    Code = "TV-FED-03" // WAL hash-chain verification failed (tamper/corruption)
+	FedIDCollision    Code = "TV-FED-04" // an id is already live on another member (restore would duplicate identity)
 )
 
 // Error is a typed tailvault failure: stable code, one-line cause, concrete fix.
@@ -61,7 +62,7 @@ func (e *Error) ExitCode() int {
 		// SPEC v2 §16: TV-AUTH-01 reuses bucket 2 (precondition/auth) — the op is
 		// refused before any work, exactly like a config precondition. No new bucket.
 		return 2
-	case FedPartialView, FedNeedAllMembers, FedChainBroken:
+	case FedPartialView, FedNeedAllMembers, FedChainBroken, FedIDCollision:
 		return 6 // federation / partial view (SPEC v2 §15)
 	default:
 		return 2 // config/precondition fallback — any unmapped code fails safe
@@ -154,6 +155,20 @@ func FedChainBrokenErr(node string, err error) *Error {
 		Code:  FedChainBroken,
 		Cause: fmt.Sprintf("WAL hash-chain verification failed on node %q", node),
 		Fix:   "inspect with the chain-verify tooling; restore the affected node's WAL from a clone/backup",
+		Err:   err,
+	}
+}
+
+// FedIDCollisionErr reports that a self-certifying id is already live on a
+// federation member, so restoring it here would create two live claims to one
+// identity (SPEC v2 §15; task-48 collision guard). Discovered by a resolution
+// fan-out before any mutation. Maps to exit bucket 6 (federation). member is the
+// member already holding the id (or this node, for a same-catalog duplicate).
+func FedIDCollisionErr(id, member string, err error) *Error {
+	return &Error{
+		Code:  FedIDCollision,
+		Cause: fmt.Sprintf("id %s is already live on member %q — restoring would create two live claims to one identity", id, member),
+		Fix:   "this id is not lost; do not restore it here — resolve the existing claim first if it is the wrong one",
 		Err:   err,
 	}
 }
