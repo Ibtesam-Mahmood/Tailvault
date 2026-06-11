@@ -6,6 +6,15 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.90 — 2026-06-11
+
+### Changed
+- **`restore-identity` now carries the `tailvault.gated` annotation (markGated).**
+  restore-identity is §16-gated (DEV-48.2; RunE already calls gateLocation before
+  the WAL intent); annotating it binds it to the §16 enforcement audit so a future
+  ungating regresses loudly. Lets task-50 tighten the audit's `mustBeGated` set to
+  require restore-identity.
+
 ## v0.0.89 — 2026-06-11
 
 ### Added

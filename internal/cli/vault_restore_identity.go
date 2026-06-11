@@ -43,7 +43,9 @@ func newVaultRestoreIdentityCmd() *cobra.Command {
 	f.StringVar(&lockPath, "path", "", "repo path of the lock entry (with --lock)")
 	f.BoolVar(&yes, "yes", false, "skip the confirmation prompt")
 	f.StringVar(&passwordFile, "password-file", "", "read the vault password from this file (remote/SSH locations)")
-	return cmd
+	// restore-identity is in the SPEC §16 gated set (DEV-48.2): its RunE calls
+	// gateLocation before the WAL intent, so bind the enforcement-audit annotation.
+	return markGated(cmd)
 }
 
 type restoreSources struct {
