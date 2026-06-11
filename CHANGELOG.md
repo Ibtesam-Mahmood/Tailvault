@@ -6,6 +6,18 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.70 — 2026-06-11
+
+Phase 4 (task-46 enforcement seam) — shared location resolver + auth gate for the
+mutating commands. The single helper the gated ops (mv/rm/sync_mode/etc.) call;
+unblocks the task-49 `track` command (which reuses `locationBackend`).
+
+- `internal/cli/vault_common.go`: `locationBackend(name)` (location-name→backend
+  resolver, reused by 43/44/45/49).
+- `internal/cli/vault_auth.go`: `gateLocation`/`verifierFor`/`localVerifier` — the
+  password-gate helper the enumerated §16 destructive/move/roster ops call. Per
+  DEV-46.7, ingestion (put/track) and reads do NOT call it.
+
 ## v0.0.69 — 2026-06-11
 
 Docs (DEV-46.7 ruling) — record the ingestion-gating ruling durably in EDGE-CASES.md

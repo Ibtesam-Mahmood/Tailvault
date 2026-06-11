@@ -3,11 +3,13 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/Ibtesam-Mahmood/tailvault/internal/auth"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/backend"
+	"github.com/Ibtesam-Mahmood/tailvault/internal/locations"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/tserr"
 )
 
@@ -46,5 +48,60 @@ func (v sshVerifier) VerifyPassword(ctx context.Context, candidate []byte) (bool
 		return false, nil
 	default:
 		return false, err // unreachable node / transport / unexpected — not a verdict
+	}
+}
+
+// localVerifier verifies a candidate against a hash file read over a local or
+// mounted path (taildrive) — the only option for a passive share with no remote
+// exec. ACCEPTED LIMITATION: the hash is read over the mount (it leaves the node
+// via the network filesystem), unlike the SSH path where it never leaves the
+// node. SSH is the hardened backend; taildrive auth is best-effort (Block 5).
+type localVerifier struct{ base string }
+
+// VerifyPassword implements auth.Verifier against the local/mounted hash file.
+func (v localVerifier) VerifyPassword(_ context.Context, candidate []byte) (bool, error) {
+	hf, ok, err := auth.LoadHashFile(auth.HashFilePath(v.base))
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		return false, auth.ErrNoPassword
+	}
+	return auth.Verify(hf, candidate), nil
+}
+
+// verifierFor selects the auth.Verifier for a location: SSH runs the node-side
+// verifier (hash never leaves the node); taildrive/local reads the hash over the
+// mount (accepted limitation).
+func verifierFor(loc locations.Location, b backend.Backend) auth.Verifier {
+	if s, ok := b.(*backend.SSH); ok {
+		return sshVerifier{ssh: s, vaultBase: loc.BasePath}
+	}
+	return localVerifier{base: loc.BasePath}
+}
+
+// gateLocation enforces the per-node password for a MUTATING op on a location
+// (D9 / SPEC v2 §16) — call it BEFORE any WAL intent / byte move. It obtains a
+// candidate (--password-file / TAILVAULT_PASSWORD / no-echo TTY) and verifies it
+// (node-side for SSH). Every refusal — none set, rejected, no source — maps to
+// TV-AUTH-01 (exit 2), so the op is refused before any work. READS MUST NOT call
+// this (§16). Shared by track/put/mv/rm/sync-mode/passwd so the gate + its
+// error mapping live in exactly one place (Block 5 audits one surface).
+func gateLocation(ctx context.Context, loc locations.Location, b backend.Backend, name, passwordFile string) error {
+	err := auth.Gate(ctx, verifierFor(loc, b), auth.ReadOpts{
+		PasswordFile: passwordFile,
+		Prompt:       "Password for " + name + ": ",
+	})
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, auth.ErrNoPassword):
+		return tserr.AuthErr("no vault password set on "+name+" — run `tailvault vault passwd "+name+"`", err)
+	case errors.Is(err, auth.ErrWrongPassword):
+		return tserr.AuthErr("password rejected for "+name, err)
+	case errors.Is(err, auth.ErrNoPasswordSource):
+		return tserr.AuthErr("password required for "+name+" (set TAILVAULT_PASSWORD, pass --password-file, or run on a terminal)", err)
+	default:
+		return err // operational failure (node unreachable, etc.) — already typed or plain
 	}
 }

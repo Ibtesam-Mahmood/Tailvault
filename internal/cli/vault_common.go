@@ -78,6 +78,23 @@ func backendForRegistry(reg locations.Registry) fed.BackendFor {
 	}
 }
 
+// locationBackend resolves a location BY NAME (from locations.toml) to its
+// backend plus the Location record. Shared by every command that acts on a named
+// location directly — vault get/put/mv/rm/passwd and track's vault-mode. An
+// unknown name is a TV-CFG-01 pointing at the registry.
+func locationBackend(name string) (backend.Backend, locations.Location, error) {
+	reg, err := locations.Load()
+	if err != nil {
+		return nil, locations.Location{}, tserr.ConfigErr("load locations.toml", err)
+	}
+	loc, ok := reg.Locations[name]
+	if !ok {
+		return nil, locations.Location{}, tserr.ConfigErr("unknown storage location "+name+" (not in locations.toml)", nil)
+	}
+	b, err := backendForLocation(loc, name)
+	return b, loc, err
+}
+
 // backendForLocation constructs a Backend from a registered location, rooted at
 // its base_path (no subpath — federation member vaults are browsed at their own
 // root). Mirrors resolveBackend's per-backend construction.
