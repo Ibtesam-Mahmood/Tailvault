@@ -6,6 +6,17 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.93 — 2026-06-11
+
+### Added
+- **Block-3 federation integration suite (task-39).** An 11-scenario `internal/
+  integration/block3_fed_test.go` (build tag `integration`) exercising the
+  multi-node federation flows end-to-end through the harness — backend
+  serialization (WAL-as-lock under a per-member mutex modelling a single SSH
+  channel) and crash-recovery (torn op detectable as a pending WAL intent at every
+  step; verify reports PendingOpState once the catalog carries the row; ReplayOp
+  completes the op). Harness gains the serialization helpers the suite needs.
+
 ## v0.0.92 — 2026-06-11
 
 ### Fixed

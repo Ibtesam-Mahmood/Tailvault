@@ -23,6 +23,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -52,6 +53,12 @@ type Member struct {
 
 	fs   *backend.FSBackend
 	down atomic.Bool
+	mu   sync.Mutex // serializes backend access — models a single client over one
+	// SSH/taildrive channel (the single-active-writer assumption, Q3/D12). This is
+	// what makes WAL-as-lock arbitration deterministic: FSBackend's Put is not
+	// create-exclusive under genuine parallelism (two racers can both rename, last
+	// wins), so production's "one client" model is reproduced by serializing here
+	// rather than relying on the filesystem.
 }
 
 // SetDown toggles unreachability. While down, the member's prober fails and
@@ -171,6 +178,57 @@ func (f *Fed) Member(t *testing.T, name string) *Member {
 func (f *Fed) Seed(t *testing.T, member, path string, content []byte) catalog.File {
 	t.Helper()
 	return f.seed(t, member, path, content, nil)
+}
+
+// SeedCrash ingests path on member through the REAL pipeline but aborts at the
+// named step ("after-intent" | "after-bytes" | "after-catalog"), leaving genuine
+// torn on-disk state for crash-recovery scenarios: a written WAL intent without
+// its done marker (after-intent/after-bytes), or a flushed catalog whose done
+// marker was never written (after-catalog). The blob bytes are on disk either
+// way. Returns the file id of the interrupted ingest (read back from the pending
+// WAL intent) so the caller can drive verify/ops/ReplayOp recovery.
+func (f *Fed) SeedCrash(t *testing.T, member, path string, content []byte, failAt string) string {
+	t.Helper()
+	m := f.Member(t, member)
+	abs := filepath.Join(m.Root, filepath.FromSlash(path))
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(abs, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cat := m.catalog(t)
+	if cat == nil {
+		t.Fatalf("fedtest: member %q has no catalog (New not run?)", member)
+	}
+	catPath := filepath.Join(m.Root, "meta", "catalog.toml")
+	plan := ingest.Plan{Root: m.Root, Files: []ingest.Candidate{{Rel: path, Size: int64(len(content)), ModTime: baseTime}}}
+	err := ingest.Bootstrap(context.Background(), ingest.BootstrapOpts{
+		Root: m.Root, Node: m.Node, Actor: "fedtest",
+		Log: &wal.Log{B: m.fs}, Cat: cat, CatPath: catPath, Plan: plan,
+		Now: func() time.Time { return baseTime },
+		Hook: func(step string) error {
+			if step == failAt {
+				return fmt.Errorf("fedtest: simulated crash at %q", step)
+			}
+			return nil
+		},
+	})
+	if err == nil {
+		t.Fatalf("fedtest: SeedCrash expected an abort at %q, but the seed completed", failAt)
+	}
+	// Recover the interrupted op id from the pending WAL intent.
+	pend, perr := (&wal.Log{B: m.fs}).Pending(context.Background(), "")
+	if perr != nil {
+		t.Fatalf("fedtest: SeedCrash read pending: %v", perr)
+	}
+	for _, r := range pend {
+		if r.Entry.Args["path"] == path {
+			return r.Entry.OpID
+		}
+	}
+	t.Fatalf("fedtest: SeedCrash left no pending intent for %q", path)
+	return ""
 }
 
 // SeedGit seeds a git-mode object: the blob is Put into the member's objects/<sha>
@@ -330,9 +388,10 @@ func (f *Fed) Tamper(t *testing.T, member string, k int) {
 
 // --- internal helpers ---
 
-// downBackend wraps a member's FSBackend and short-circuits every call with a
-// TV-NODE error while the member is down (before any data moves), mirroring how a
-// real unreachable node fails at the backend boundary.
+// downBackend wraps a member's FSBackend: it short-circuits every call with a
+// TV-NODE error while the member is down (before any data moves), and serializes
+// all calls through the member mutex so the harness models a single client over
+// one channel (deterministic WAL-as-lock arbitration; see Member.mu).
 type downBackend struct{ m *Member }
 
 func (d *downBackend) errIfDown() error {
@@ -346,6 +405,8 @@ func (d *downBackend) Stat(ctx context.Context, key string) (backend.Meta, error
 	if err := d.errIfDown(); err != nil {
 		return backend.Meta{}, err
 	}
+	d.m.mu.Lock()
+	defer d.m.mu.Unlock()
 	return d.m.fs.Stat(ctx, key)
 }
 
@@ -353,6 +414,8 @@ func (d *downBackend) Get(ctx context.Context, key string, w io.Writer) error {
 	if err := d.errIfDown(); err != nil {
 		return err
 	}
+	d.m.mu.Lock()
+	defer d.m.mu.Unlock()
 	return d.m.fs.Get(ctx, key, w)
 }
 
@@ -360,6 +423,8 @@ func (d *downBackend) Put(ctx context.Context, key string, r io.Reader) error {
 	if err := d.errIfDown(); err != nil {
 		return err
 	}
+	d.m.mu.Lock()
+	defer d.m.mu.Unlock()
 	return d.m.fs.Put(ctx, key, r)
 }
 
@@ -367,6 +432,8 @@ func (d *downBackend) PutOverwrite(ctx context.Context, key string, r io.Reader)
 	if err := d.errIfDown(); err != nil {
 		return err
 	}
+	d.m.mu.Lock()
+	defer d.m.mu.Unlock()
 	return d.m.fs.PutOverwrite(ctx, key, r)
 }
 
@@ -374,6 +441,8 @@ func (d *downBackend) Delete(ctx context.Context, key string) error {
 	if err := d.errIfDown(); err != nil {
 		return err
 	}
+	d.m.mu.Lock()
+	defer d.m.mu.Unlock()
 	return d.m.fs.Delete(ctx, key)
 }
 
@@ -381,6 +450,8 @@ func (d *downBackend) List(ctx context.Context, prefix string) ([]string, error)
 	if err := d.errIfDown(); err != nil {
 		return nil, err
 	}
+	d.m.mu.Lock()
+	defer d.m.mu.Unlock()
 	return d.m.fs.List(ctx, prefix)
 }
 
@@ -388,6 +459,8 @@ func (d *downBackend) HashObject(ctx context.Context, key string) (string, error
 	if err := d.errIfDown(); err != nil {
 		return "", err
 	}
+	d.m.mu.Lock()
+	defer d.m.mu.Unlock()
 	return d.m.fs.HashObject(ctx, key)
 }
 
