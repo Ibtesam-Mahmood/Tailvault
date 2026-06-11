@@ -6,6 +6,14 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.66 — 2026-06-11
+
+Phase 4 (SG-6 gc test coverage) — adds `TestPersistCatalogOverBackend_Overwrites`,
+a direct replace-wins assertion on gc's catalog write-back through
+`backend.PutOverwrite` (the SG-6 gc call-site, migrated in v0.0.65). Test salvaged
+from coder-a's parallel a34147c (the gc migration itself was already landed via
+coder-b's 0a3b41d); the test is the one non-duplicate part.
+
 ## v0.0.65 — 2026-06-11
 
 Phase 4 (SG-6 part 2 — gc call-site) — `vault gc`'s `persistCatalogOverBackend` now
