@@ -6,6 +6,16 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.52 — 2026-06-11
+
+Phase 3 (task-30) — `internal/identity`: genesis-hash file IDs + pull receipts
+(SPEC v2 §11/§12).
+
+- Genesis record with EXPLICIT-byte canonical serialization (intentionally
+  double-quoted, library-independent, hash-load-bearing) → file-ID derivation;
+  §11 test vector reproduced byte-for-byte (`id=30092d830e26…`). 12-hex short form.
+- Pull receipts (§12). No SPEC change.
+
 ## v0.0.51 — 2026-06-11
 
 Phase 3 (task-29) — `internal/wal`: hash-chained per-node WAL, WAL-as-lock, pruning

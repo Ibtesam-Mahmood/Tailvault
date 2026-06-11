@@ -57,6 +57,16 @@
   durable. (Resolves the QA "prune can brick the WAL" finding.)
 - **Follow-up:** none
 
+- **Date / Task:** 2026-06-11 / task-30 (internal/identity)
+- **Edge case:** the genesis canonical form (§11) is DOUBLE-quoted explicit byte
+  construction, while catalog (§9) and WAL (§10) canonical forms are go-toml/v2
+  single-quoted. They differ on purpose: genesis bytes feed a cross-implementation
+  hash (the file ID) and MUST be library-independent and frozen forever; catalog/
+  WAL bytes are produced+consumed by our own encoder. Don't "unify" them.
+- **Decision:** chose — identity.CanonicalBytes renders 4 lines explicitly (not
+  via a TOML lib); test vector locks id=30092d830e26…
+- **Follow-up:** none
+
 - **Date / Task:** 2026-06-11 / task-29 (internal/wal)
 - **Edge case:** WAL-as-lock needs an atomic "claim seq N" primitive, but task-27
   sketched the entry filename as `<seq>-<op_id>.toml` — which puts the op id in the
