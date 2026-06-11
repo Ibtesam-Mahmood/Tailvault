@@ -57,6 +57,31 @@
   durable. (Resolves the QA "prune can brick the WAL" finding.)
 - **Follow-up:** none
 
+- **Date / Task:** 2026-06-11 / task-34 (vault scan)
+- **Edge case:** mtime granularity differs by filesystem (1s on some); an edit
+  within the same second as the last scan can look unchanged, so the cheap (lazy)
+  scan can miss it.
+- **Decision:** worked-around — freshness compares size AND mtime>last_scanned;
+  the `--paranoid` flag hashes everything (the thorough pass). Lazy scan trades a
+  sliver of certainty for speed on big vaults; verify (task-38) is the exhaustive
+  check. Documented in Diff.
+- **Follow-up:** Block 7 candidate (mtime-equality boundary policy).
+
+- **Date / Task:** 2026-06-11 / task-34 (vault scan)
+- **Edge case:** ambiguous moves — several files share one content hash, so a
+  deleted+added pair cannot be uniquely matched.
+- **Decision:** chose — only a UNIQUE (1 deleted, 1 added) hash match becomes a
+  Moved (id preserved); ambiguous many-to-* matches fall back to delete+ingest.
+- **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-34 (vault scan)
+- **Edge case:** Suspect (hash drift, mtime+size unchanged) could be silently
+  absorbed, masking corruption.
+- **Decision:** chose — Suspect is NEVER applied (returned for reporting); scan
+  itself exits 0 if its own work succeeded and prints a loud "run verify" warning.
+  The corruption verdict belongs to verify (task-38).
+- **Follow-up:** none
+
 - **Date / Task:** 2026-06-11 / task-33 (vault init bootstrap)
 - **Edge case:** byte-identical resume requires stable file IDs and timestamps
   across an interrupted+resumed run, but random op ids / wall-clock timestamps

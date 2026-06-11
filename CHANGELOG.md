@@ -6,6 +6,15 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.56 — 2026-06-11
+
+Phase 3 (task-34) — `vault scan`: reconcile the working tree against the catalog.
+
+- `internal/ingest/scan.go` + `internal/cli/vault_scan.go`: detects Clean/New/
+  Modified/Moved/Suspect/Deleted, with two hard gates — Suspect entries are NEVER
+  auto-applied, Moved preserves the genesis file ID. (The last_scanned-on-clean
+  watermark fix / review F5 lands in the following WS-A fix commit.)
+
 ## v0.0.55 — 2026-06-11
 
 Phase 3 (task-33) — `vault init` bootstrap. New `vault` command group + `internal/ingest`

@@ -29,8 +29,9 @@ var reservedNames = map[string]bool{
 
 // Candidate is one file selected for ingestion.
 type Candidate struct {
-	Rel  string // vault-relative, slash-separated path
-	Size int64
+	Rel     string // vault-relative, slash-separated path
+	Size    int64
+	ModTime time.Time // for vault scan freshness (Task 34)
 }
 
 // Plan is the candidate set after walk + ignore + deselect.
@@ -90,7 +91,7 @@ func BuildPlan(root string, ig *Ignore, explicit map[string]bool) (Plan, error) 
 		if ierr != nil {
 			return ierr
 		}
-		p.Files = append(p.Files, Candidate{Rel: rel, Size: info.Size()})
+		p.Files = append(p.Files, Candidate{Rel: rel, Size: info.Size(), ModTime: info.ModTime()})
 		return nil
 	})
 	if err != nil {
