@@ -1,0 +1,31 @@
+name: ci
+
+on: [push, pull_request]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: build
+        run: go build ./...
+
+      - name: vet
+        run: go vet ./...
+
+      - name: gofmt
+        # `gofmt -l` exits 0 even when it lists files, so guard with `test -z`.
+        run: test -z "$(gofmt -l .)" || { echo 'gofmt needs to be run on:'; gofmt -l .; exit 1; }
+
+      - name: unit tests
+        run: go test ./...
+
+      - name: integration tests
+        # SSH-dependent scenarios self-skip when no usable `ssh localhost` is
+        # present; the taildrive-dir scenarios always run.
+        run: go test -tags integration ./...

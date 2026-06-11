@@ -1,0 +1,19 @@
+# tailvault project config — committed to the repo
+version = 1
+
+[storage]
+location = "home-pi"      # name resolved via ~/.config/tailvault/locations.toml
+subpath  = "root-pnp"     # optional child folder under the location's base_path
+
+[rules]
+min_size    = "5MB"                       # files >= this are vault-managed
+include     = ["**/*.pdf", "**/*.stl", "**/*.3mf", "**/*.pptx"]
+exclude     = ["**/*.tmp", "drafts/**"]
+history     = false                        # default: no version history (anti-bloat)
+auto_delete = true                         # default: prune from storage on git delete
+
+# Per-pattern overrides; first match wins.
+[[rules.overrides]]
+match    = "masters/**"
+history  = true
+preserve = true                            # never auto-delete
