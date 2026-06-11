@@ -317,63 +317,13 @@ func TestProjectCatalogRestoreRealWriter(t *testing.T) {
 	}
 }
 
-// TestProjectCatalogCrossMoveArgs (fix-35-D) projects the cross-member move op
-// shapes the merged vault_mv writer emits (canonical un-prefixed genesis keys):
-// the source record (moved_to set) drops the entry; the dest record (id+dest_path
-// +genesis) reconstructs it.
-func TestProjectCatalogCrossMoveArgs(t *testing.T) {
-	ctx := context.Background()
-	g := identity.Genesis{ContentSHA256: hexSha("mv"), OriginalPath: "a.bin", IngestOpID: ingestOpID("a.bin"), OriginNode: "src"}
-	fileID, _ := identity.MintID(g)
-
-	// dest node: only the arrival OpMove record (no prior ingest).
-	destLog, _, _ := replayEnv(t)
-	dm, err := destLog.AppendIntent(ctx, wal.Entry{
-		OpID: wal.NewOpID(), OpType: wal.OpMove, BlobRefs: []string{fileID}, Actor: "a", CreatedAt: replayClock()(),
-		Args: map[string]string{
-			"id": fileID, "from": "src", "src_path": "a.bin", "dest_path": "moved/a.bin",
-			"content_sha256": g.ContentSHA256, "original_path": g.OriginalPath,
-			"ingest_op_id": g.IngestOpID, "origin_node": g.OriginNode,
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := destLog.MarkDone(ctx, dm.Entry.OpID); err != nil {
-		t.Fatal(err)
-	}
-	destRecs, _ := destLog.Read(ctx)
-	destCat, err := ProjectCatalog(&catalog.Catalog{Version: catalog.SchemaVersion, Node: "dst"}, destRecs, "dst")
-	if err != nil {
-		t.Fatal(err)
-	}
-	f, ok := destCat.Find("moved/a.bin")
-	if !ok || f.ID != fileID || f.Genesis != catalog.Genesis(g) {
-		t.Fatalf("cross-move dest row not reconstructed from canonical args: %+v ok=%v", f, ok)
-	}
-
-	// source node: ingest then a moved_to record → entry dropped.
-	srcLog, srcCat, srcPath := replayEnv(t)
-	ingE := wal.Entry{OpID: ingestOpID("a.bin"), OpType: wal.OpIngest, BlobRefs: []string{fileID}, Actor: "a", CreatedAt: replayClock()(),
-		Args: map[string]string{"path": "a.bin", "content_sha256": g.ContentSHA256, "origin_node": "src", "sync_mode": catalog.SyncModeManual, "size": "5"}}
-	rec, _ := srcLog.AppendIntent(ctx, ingE)
-	if err := ReplayOp(ctx, srcLog, srcCat, srcPath, "src", rec, replayClock()); err != nil {
-		t.Fatal(err)
-	}
-	sm, _ := srcLog.AppendIntent(ctx, wal.Entry{OpID: wal.NewOpID(), OpType: wal.OpMove, BlobRefs: []string{fileID}, Actor: "a", CreatedAt: replayClock()(),
-		Args: map[string]string{"from": "src", "to": "dst", "moved_to": "dst", "src_path": "a.bin", "dest_path": "moved/a.bin"}})
-	if err := srcLog.MarkDone(ctx, sm.Entry.OpID); err != nil {
-		t.Fatal(err)
-	}
-	srcRecs, _ := srcLog.Read(ctx)
-	rebuiltSrc, err := ProjectCatalog(&catalog.Catalog{Version: catalog.SchemaVersion, Node: "src"}, srcRecs, "src")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := rebuiltSrc.Find("a.bin"); ok {
-		t.Error("cross-move source must drop the entry (file left the node)")
-	}
-}
+// NOTE: the cross-member move projection (dest reconstruct + source drop) is
+// covered NON-VACUOUSLY by the real writer→projector round-trip in
+// internal/cli TestVaultMv_CrossMoveGitRebuildsFaithfully (drives the actual
+// mvCross then ProjectCatalog, asserting sync_mode=git + size + identity). The
+// former hand-built TestProjectCatalogCrossMoveArgs was removed: it constructed
+// the dest op WITHOUT sync_mode/size and so passed regardless of the writer — the
+// exact drift trap that hid the missing keys (fix-35-D-resid #44).
 
 // TestProjectCatalogSyncModeArgs (fix-35-D) projects OpSyncMode using the merged
 // writer keys (to_mode/new_sha256/last_scanned).

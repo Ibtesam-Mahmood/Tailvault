@@ -6,6 +6,17 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.101 — 2026-06-11
+
+### Removed
+- **Deleted the vacuous `ingest.TestProjectCatalogCrossMoveArgs`.** It hand-built
+  the cross-move dest OpMove entry (without sync_mode/size) and asserted only
+  id+genesis — a drift trap that passed regardless of the writer (the same class
+  that hid the genesis_* key mismatch). The `ingest` package can't import `cli`
+  (cycle), so the real writer→projector proof is necessarily the cli round-trip
+  `TestVaultMv_CrossMoveGitRebuildsFaithfully` (#44 part b); this removes the dead
+  vacuous coverage in its favor (an explanatory breadcrumb comment remains).
+
 ## v0.0.100 — 2026-06-11
 
 ### Changed
