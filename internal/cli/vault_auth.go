@@ -51,44 +51,26 @@ func (v sshVerifier) VerifyPassword(ctx context.Context, candidate []byte) (bool
 	}
 }
 
-// localVerifier verifies a candidate against a hash file read over a local or
-// mounted path (taildrive) — the only option for a passive share with no remote
-// exec. ACCEPTED LIMITATION: the hash is read over the mount (it leaves the node
-// via the network filesystem), unlike the SSH path where it never leaves the
-// node. SSH is the hardened backend; taildrive auth is best-effort (Block 5).
-type localVerifier struct{ base string }
-
-// VerifyPassword implements auth.Verifier against the local/mounted hash file.
-func (v localVerifier) VerifyPassword(_ context.Context, candidate []byte) (bool, error) {
-	hf, ok, err := auth.LoadHashFile(auth.HashFilePath(v.base))
-	if err != nil {
-		return false, err
-	}
-	if !ok {
-		return false, auth.ErrNoPassword
-	}
-	return auth.Verify(hf, candidate), nil
-}
-
-// verifierFor selects the auth.Verifier for a location: SSH runs the node-side
-// verifier (hash never leaves the node); taildrive/local reads the hash over the
-// mount (accepted limitation).
-func verifierFor(loc locations.Location, b backend.Backend) auth.Verifier {
-	if s, ok := b.(*backend.SSH); ok {
-		return sshVerifier{ssh: s, vaultBase: loc.BasePath}
-	}
-	return localVerifier{base: loc.BasePath}
-}
-
 // gateLocation enforces the per-node password for a MUTATING op on a location
-// (D9 / SPEC v2 §16) — call it BEFORE any WAL intent / byte move. It obtains a
-// candidate (--password-file / TAILVAULT_PASSWORD / no-echo TTY) and verifies it
-// (node-side for SSH). Every refusal — none set, rejected, no source — maps to
-// TV-AUTH-01 (exit 2), so the op is refused before any work. READS MUST NOT call
-// this (§16). Shared by track/put/mv/rm/sync-mode/passwd so the gate + its
-// error mapping live in exactly one place (Block 5 audits one surface).
+// (D9 / SPEC v2 §16) — call it BEFORE any WAL intent / byte move. Verification is
+// done ON THE NODE over SSH (the stored hash never leaves the node). Every
+// refusal — none set, rejected, no source — maps to TV-AUTH-01 (exit 2), so the
+// op is refused before any work. READS MUST NOT call this (§16). Shared by
+// mv/rm/sync-mode/passwd/evict so the gate + its error mapping live in exactly
+// one place (Block 5 audits one surface).
+//
+// SSH-only by design (DEV-46.8): a passive Taildrive mount cannot run the
+// node-side verifier, and reading the hash to the client would violate §16's
+// "hash never leaves the node". So a non-SSH (taildrive/local) location is NOT
+// password-gated here — its mutations rely on the tailnet ACL + the OS mount
+// permissions (documented; the threat model revisits this in Block 5). Returning
+// nil for non-SSH is deliberate, not a silent skip of a required check.
 func gateLocation(ctx context.Context, loc locations.Location, b backend.Backend, name, passwordFile string) error {
-	err := auth.Gate(ctx, verifierFor(loc, b), auth.ReadOpts{
+	s, ok := b.(*backend.SSH)
+	if !ok {
+		return nil // taildrive/local: ungated (no node-side verify possible)
+	}
+	err := auth.Gate(ctx, sshVerifier{ssh: s, vaultBase: loc.BasePath}, auth.ReadOpts{
 		PasswordFile: passwordFile,
 		Prompt:       "Password for " + name + ": ",
 	})

@@ -390,3 +390,16 @@
   not creation) — but task-51 must explicitly assess whether ingestion should join the
   gated set in a future SPEC rev (the SSH/tailnet ACL is then the ONLY barrier to
   unauthorized content writes). Endorsed by team-lead for Block 3–4; deferred to task-51.
+
+- **Date / Task:** 2026-06-11 / task-44/45/46 (taildrive mutation gating — DEV-46.8)
+- **Edge case:** The §16 password gate verifies NODE-SIDE ("the hash never leaves the
+  node"). SSH can run `node verify-passwd` on the node, but a passive TAILDRIVE mount
+  cannot execute code node-side — so node-side password verification is impossible over
+  taildrive without reading the hash to the client (which would violate §16).
+- **Decision:** chose — `gateLocation` gates SSH node-side ONLY; non-SSH (taildrive/local)
+  mutations are NOT password-gated, relying on the outer tailnet-ACL + mount-permission
+  layer. Removed the earlier client-side `localVerifier` (it leaked the hash off-node). A
+  taildrive backend cannot enforce the §16 password gate by construction.
+- **Follow-up:** ⚠ THREAT-MODEL (task-51): mutating ops over a taildrive mount bypass the
+  password gate (tailnet ACL + mount perms are the only barrier). Revisit whether
+  password-required ops should refuse taildrive backends outright in a future SPEC rev.

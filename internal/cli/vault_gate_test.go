@@ -2,27 +2,19 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
-	"github.com/Ibtesam-Mahmood/tailvault/internal/auth"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/backend"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/locations"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/tserr"
 )
 
-// writeNodePasswd writes a node hash file under base (base/meta/auth/passwd).
-func writeNodePasswd(t *testing.T, base, pw string) {
-	t.Helper()
-	hf, err := auth.NewHashFile([]byte(pw))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := auth.WriteHashFile(auth.HashFilePath(base), hf); err != nil {
-		t.Fatal(err)
-	}
-}
+// errBadExit simulates a non-zero remote exit (e.g. the node's TV-AUTH-01).
+var errBadExit = errors.New("exit status 2")
 
 // pwFile writes a --password-file and returns its path.
 func pwFile(t *testing.T, pw string) string {
@@ -34,55 +26,41 @@ func pwFile(t *testing.T, pw string) string {
 	return p
 }
 
-func TestVerifierFor(t *testing.T) {
-	sshLoc := locations.Location{Backend: locations.BackendSSH, Node: "n", User: "u", BasePath: "/v"}
-	if _, ok := verifierFor(sshLoc, &backend.SSH{}).(sshVerifier); !ok {
-		t.Error("ssh location should yield sshVerifier")
+func TestGateLocation_TaildriveUngated(t *testing.T) {
+	// DEV-46.8: a passive taildrive mount can't run node-side verify, so its
+	// mutations are NOT password-gated — gateLocation is a nil no-op regardless
+	// of whether a password is supplied (relies on tailnet ACL + mount perms).
+	ctx := context.Background()
+	loc := locations.Location{Backend: locations.BackendTaildrive, BasePath: t.TempDir(), Share: "s"}
+	b := backend.NewTaildrive(loc.BasePath)
+	if err := gateLocation(ctx, loc, b, "nas", ""); err != nil {
+		t.Errorf("taildrive should be ungated (nil), got %v", err)
 	}
-	tdLoc := locations.Location{Backend: locations.BackendTaildrive, BasePath: "/mnt", Share: "s"}
-	if _, ok := verifierFor(tdLoc, backend.NewTaildrive("/mnt")).(localVerifier); !ok {
-		t.Error("taildrive location should yield localVerifier")
+	if err := gateLocation(ctx, loc, b, "nas", pwFile(t, "irrelevant")); err != nil {
+		t.Errorf("taildrive ungated even with a password file, got %v", err)
 	}
 }
 
-func TestLocalVerifier(t *testing.T) {
+func TestGateLocation_SSH(t *testing.T) {
 	ctx := context.Background()
-	base := t.TempDir()
-	writeNodePasswd(t, base, "sesame")
-	v := localVerifier{base: base}
+	loc := locations.Location{Backend: locations.BackendSSH, Node: "home-pi", User: "ibte", BasePath: "/mnt/ssd/tv"}
 
-	if ok, err := v.VerifyPassword(ctx, []byte("sesame")); err != nil || !ok {
-		t.Errorf("correct: ok %v err %v; want true,nil", ok, err)
+	// Node exits 0 → match → nil. Assert the candidate reached the node verbatim.
+	okRunner := &fakeRunner{handle: func(string, []byte) ([]byte, error) { return nil, nil }}
+	if err := gateLocation(ctx, loc, &backend.SSH{User: "ibte", Node: "home-pi", BasePath: "/mnt/ssd/tv", R: okRunner}, "home-pi", pwFile(t, "sesame")); err != nil {
+		t.Errorf("ssh correct password: %v", err)
 	}
-	if ok, err := v.VerifyPassword(ctx, []byte("wrong")); err != nil || ok {
-		t.Errorf("wrong: ok %v err %v; want false,nil", ok, err)
+	if string(okRunner.lastIn) != "sesame" || !strings.Contains(okRunner.lastCmd, "node verify-passwd") {
+		t.Errorf("gate did not run node verify-passwd with verbatim candidate: in=%q cmd=%q", okRunner.lastIn, okRunner.lastCmd)
 	}
-	// No password set on the node.
-	if _, err := (localVerifier{base: t.TempDir()}).VerifyPassword(ctx, []byte("x")); err == nil {
-		t.Error("no-password-set should error (ErrNoPassword)")
-	}
-}
 
-func TestGateLocation(t *testing.T) {
-	ctx := context.Background()
-	base := t.TempDir()
-	writeNodePasswd(t, base, "open sesame")
-	loc := locations.Location{Backend: locations.BackendTaildrive, BasePath: base, Share: "s"}
-	b := backend.NewTaildrive(base)
-
-	// Correct password via --password-file → nil.
-	if err := gateLocation(ctx, loc, b, "home-pi", pwFile(t, "open sesame")); err != nil {
-		t.Errorf("correct password: %v", err)
-	}
-	// Wrong password → TV-AUTH-01.
-	if err := gateLocation(ctx, loc, b, "home-pi", pwFile(t, "nope")); !isTVCode(err, tserr.AuthRequired) {
-		t.Errorf("wrong password: want TV-AUTH-01, got %v", err)
-	}
-	// No password set on the node → TV-AUTH-01 (actionable message).
-	empty := locations.Location{Backend: locations.BackendTaildrive, BasePath: t.TempDir(), Share: "s"}
-	err := gateLocation(ctx, empty, backend.NewTaildrive(empty.BasePath), "home-pi", pwFile(t, "x"))
+	// Node returns TV-AUTH-01 on stderr (exit 2) → rejected → TV-AUTH-01.
+	rejRunner := &fakeRunner{handle: func(string, []byte) ([]byte, error) {
+		return []byte("TV-AUTH-01: password rejected (fix: ...)\n"), errBadExit
+	}}
+	err := gateLocation(ctx, loc, &backend.SSH{User: "ibte", Node: "home-pi", BasePath: "/mnt/ssd/tv", R: rejRunner}, "home-pi", pwFile(t, "wrong"))
 	if !isTVCode(err, tserr.AuthRequired) {
-		t.Errorf("no password set: want TV-AUTH-01, got %v", err)
+		t.Errorf("ssh wrong password: want TV-AUTH-01, got %v", err)
 	}
 }
 

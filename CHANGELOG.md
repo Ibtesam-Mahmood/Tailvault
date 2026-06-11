@@ -6,6 +6,18 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.72 — 2026-06-11
+
+Phase 4 (DEV-46.8) — `gateLocation` gates SSH node-side ONLY. The §16 password gate
+verifies node-side ("hash never leaves the node"); a passive taildrive mount can't run
+`node verify-passwd`, so taildrive/local mutations are NOT password-gated (rely on the
+tailnet-ACL + mount-perm outer layer). Removes the earlier client-side `localVerifier`
+(it read the hash off-node, violating §16).
+
+- `internal/cli/vault_auth.go`: `gateLocation` returns nil for non-SSH backends; SSH path
+  unchanged (verbatim candidate → exit-0 match / TV-AUTH-01 reject). `localVerifier`/
+  `verifierFor` removed. EDGE-CASES.md: taildrive-mutation-ungated + task-51 threat-model note.
+
 ## v0.0.71 — 2026-06-11
 
 Phase 4 (task-48 engine) — restore-identity core. `ingest.RestoreIdentity`
