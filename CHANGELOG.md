@@ -6,6 +6,25 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.48 — 2026-06-11
+
+Phase 4 (task-46 part 1 of 2) — `internal/auth`: argon2id password core (SPEC v2
+§16). Dependency-free security-critical crypto half; command wiring + enforcement
+audit follow in part 2 (needs wal + the mutating commands). task-46/#16 stays open.
+
+- `internal/auth`: `Derive`/`Verify` via `x/crypto/argon2` (m=65536,t=3,p=4, v19;
+  Verify re-derives with params+salt FROM the stored hash, constant-time compare,
+  zero-hash never accepts); canonical PHC `FormatPHC`/`ParsePHC` (leading `$`,
+  unpadded `RawStdEncoding`, strict reject per DG-27.1); `WriteHashFile`/
+  `LoadHashFile` (`meta/auth/passwd`, 0600, temp+fsync+rename atomic); `ReadPassword`
+  (--password-file > `TAILVAULT_PASSWORD` env > no-echo TTY; non-TTY+no-source hard
+  fail; never a `--password` flag); `Verifier` seam + `MemoryVerifier` for the harness.
+- `internal/tserr`: `TV-AUTH-01` (`AuthRequired`/`AuthErr`, exit bucket 2).
+- Deps: `golang.org/x/crypto` v0.53.0, `golang.org/x/term` v0.44.0 (direct),
+  `golang.org/x/sys` v0.46.0 (indirect) — accepted per D8 (never roll our own crypto).
+- EDGE-CASES.md: verify-uses-stored-params, no-password≠wrong, non-TTY-hard-fail,
+  unpadded-base64-canonical.
+
 ## v0.0.47 — 2026-06-11
 
 Phase 3 (task-28) — `internal/catalog`: parse/validate/canonical-write/atomic-update

@@ -64,3 +64,38 @@
 - **Decision:** chose — a `[ -f ]` miss returns TV-OBJ-01 (exit 5), identical to
   `Get`, so the short-circuit is a drop-in for verify's pass-1.
 - **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-46 part 1 (internal/auth — argon2id core)
+- **Edge case:** argon2id verify must use the parameters stored IN the hash file,
+  not the client's current defaults — otherwise a future param bump (m/t/p) silently
+  locks out every node hashed under the old cost.
+- **Decision:** chose — `Verify` reads m/t/p + salt from the parsed PHC string and
+  derives the candidate with the key length = len(stored hash). `DefaultParams` is
+  only ever used when SETTING a new password (DG-27.1, SPEC v2 §16).
+- **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-46 part 1 (internal/auth — argon2id core)
+- **Edge case:** "no password set on the node" is operationally different from
+  "wrong password" — defaulting an unset node to open would silently weaken D9.
+- **Decision:** chose — distinct `ErrNoPassword` sentinel; `MemoryVerifier{Set:false}`
+  and (later) the SSH verifier return it, and the command boundary maps it to a
+  TV-AUTH-01 telling the user to run `tailvault vault passwd <location>` — mutations
+  are REFUSED, never allowed, when no password exists.
+- **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-46 part 1 (internal/auth — argon2id core)
+- **Edge case:** a script with no TTY and neither TAILVAULT_PASSWORD nor
+  --password-file would hang forever on a no-echo prompt — or, worse, a naive impl
+  might proceed unauthenticated.
+- **Decision:** chose — `ReadPassword` returns `ErrNoPasswordSource` (hard-fail)
+  before any network mutation when stdin is not a terminal and no env/file source
+  is set. Never a bare `--password` argv flag (visible in `ps`).
+- **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-46 part 1 (internal/auth — argon2id core)
+- **Edge case:** PHC base64 fields — padded vs unpadded — must be canonical or two
+  nodes disagree on the same hash string.
+- **Decision:** chose — `base64.RawStdEncoding` (standard alphabet, `=` stripped)
+  for both encode and decode; `ParsePHC` rejects padded input so a non-canonical
+  file can't round-trip silently (DG-27.1).
+- **Follow-up:** none

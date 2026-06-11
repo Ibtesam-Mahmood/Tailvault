@@ -19,6 +19,7 @@ const (
 	NodeOffline     Code = "TV-NODE-01" // storage node offline/unreachable
 	NodeNotWritable Code = "TV-NODE-02" // node reachable but base_path not writable
 	ObjMissing      Code = "TV-OBJ-01"  // expected blob missing on the node
+	AuthRequired    Code = "TV-AUTH-01" // password missing/rejected on a mutating remote op
 )
 
 // Error is a typed tailvault failure: stable code, one-line cause, concrete fix.
@@ -50,6 +51,10 @@ func (e *Error) ExitCode() int {
 		return 4
 	case ObjMissing:
 		return 5
+	case AuthRequired:
+		// SPEC v2 §16: TV-AUTH-01 reuses bucket 2 (precondition/auth) — the op is
+		// refused before any work, exactly like a config precondition. No new bucket.
+		return 2
 	default:
 		return 2 // config/precondition fallback — any unmapped code fails safe
 	}
@@ -116,6 +121,20 @@ func ObjMissingErr(sha string, err error) *Error {
 		Code:  ObjMissing,
 		Cause: fmt.Sprintf("expected blob %s missing on the node", sha),
 		Fix:   "re-push from a clone that has it, or run `tailvault verify`",
+		Err:   err,
+	}
+}
+
+// AuthErr reports that a mutating remote op was attempted without a valid
+// password (none set, none supplied, or the supplied one was rejected). Maps to
+// exit bucket 2; refused before any work. The cause is caller-supplied since the
+// three situations read differently to the user; the fix always points at the
+// no-recovery reset path (SSH/physical access).
+func AuthErr(cause string, err error) *Error {
+	return &Error{
+		Code:  AuthRequired,
+		Cause: cause,
+		Fix:   "supply the node password, or reset the hash over SSH/physical access (no recovery)",
 		Err:   err,
 	}
 }
