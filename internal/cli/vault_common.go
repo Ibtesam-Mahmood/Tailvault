@@ -218,25 +218,37 @@ func fileByPath(ctx context.Context, reg locations.Registry, loc, rel string) (c
 }
 
 // fileByIDPrefix disambiguates a (short) hex ID prefix against every active
-// member's catalog, mirroring git's unique-prefix rule. Zero matches → TV-OBJ-01;
-// more than one DISTINCT id → an ambiguous-prefix config error listing the
-// candidates; exactly one → that file plus the member holding it as the home
-// hint. A member whose backend or catalog is unreadable is skipped (a single
-// unreachable member never fails the whole lookup — reachability is the
-// resolver's concern, not prefix matching).
+// member's catalog, mirroring git's unique-prefix rule. Exactly one match → that
+// file plus the member holding it as the home hint; more than one DISTINCT id →
+// an ambiguous-prefix config error listing the candidates.
+//
+// Zero matches is reachability-AWARE (FED-LOOKUP-1): a match can only be missed on
+// a member we could actually consult. If any ACTIVE member was UNREACHABLE (its
+// backend or catalog could not be read — a down node, not a member that is simply
+// reachable-with-no-catalog-yet), absence cannot be proven, so the result is a
+// PartialView (TV-FED-01, exit 6), NOT a clean miss. Only when EVERY active member
+// answered is a zero-match a genuine TV-OBJ-01 (exit 5). This mirrors the
+// resolver's review-32 safety property (Missing only after all members reachable)
+// so the id-prefix lookup can never report a silent miss under a partial view.
 func fileByIDPrefix(ctx context.Context, reg locations.Registry, roster fed.Roster, prefix string) (catalog.File, string, error) {
 	prefix = strings.ToLower(prefix)
 	bf := backendForRegistry(reg)
 	matches := map[string]catalog.File{} // id -> file
 	homeOf := map[string]string{}        // id -> member
+	var unreachable []string             // active members we could not consult
 	for _, m := range roster.Active() {
 		b, err := bf(m)
 		if err != nil {
+			unreachable = append(unreachable, m.Name) // cannot build a backend → cannot consult
 			continue
 		}
 		cat, err := readCatalog(ctx, b)
-		if err != nil || cat == nil {
+		if err != nil {
+			unreachable = append(unreachable, m.Name) // node down / unreadable → cannot prove absence
 			continue
+		}
+		if cat == nil {
+			continue // reachable, no catalog yet → definitively does not hold the id
 		}
 		for _, f := range cat.Files {
 			if strings.HasPrefix(strings.ToLower(f.ID), prefix) {
@@ -247,6 +259,10 @@ func fileByIDPrefix(ctx context.Context, reg locations.Registry, roster fed.Rost
 	}
 	switch len(matches) {
 	case 0:
+		if len(unreachable) > 0 {
+			// Can't prove the id is absent federation-wide → partial view, not a miss.
+			return catalog.File{}, "", tserr.FedPartialViewErr(identity.Short(prefix), unreachable, nil)
+		}
 		return catalog.File{}, "", tserr.ObjMissingErr(prefix, nil)
 	case 1:
 		for id, f := range matches {

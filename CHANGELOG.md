@@ -6,6 +6,23 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.102 — 2026-06-11
+
+### Fixed
+- **`vault stat|get|mv <id>` no longer reports a silent miss under a partial view
+  (FED-LOOKUP-1, ship-blocker).** `fileByIDPrefix` scanned every active member's
+  catalog and returned TV-OBJ-01 (exit 5, clean miss) on zero matches even when a
+  member was UNREACHABLE and might hold the id — a silent-missing under a partial
+  view that violated "never silent success", the exit-5-vs-6 discipline, and the
+  resolver's review-32 safety property (Missing only after ALL members reachable).
+  It is now reachability-aware: it tracks active members it could not consult
+  (backend-build or catalog read error = a down node — distinct from a reachable
+  member with no catalog yet, which definitively does not hold the id). On zero
+  matches: any unreachable member → TV-FED-01 PartialView (exit 6, absence
+  unprovable); all members answered → TV-OBJ-01 (exit 5, genuine miss). Surfaced by
+  task-50 Row 5 (real-CLI reachability driving). Focused test pins both boundary
+  sides via the fedtest down-member seam.
+
 ## v0.0.101 — 2026-06-11
 
 ### Removed
