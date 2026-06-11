@@ -20,6 +20,7 @@ func newVaultCmd() *cobra.Command {
 		newVaultRestoreIdentityCmd(),
 		newVaultGetCmd(),
 		newVaultPutCmd(),
+		newVaultMvCmd(),
 		newVaultRebuildCatalogCmd(),
 	)
 	return cmd

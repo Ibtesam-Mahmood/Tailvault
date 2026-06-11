@@ -2,6 +2,7 @@ package backend
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path"
@@ -134,6 +135,29 @@ func (b *Taildrive) PutOverwrite(_ context.Context, key string, r io.Reader) err
 		return b.nodeErr(err)
 	}
 	return nil
+}
+
+// TransferFrom copies key from another Taildrive share directly into this one. A
+// passive share is a local mount, so the move is a root-to-root file copy through
+// the two mounts — the bytes pass node→node (or, here, mount→mount), never
+// through the orchestrating command's buffers. It reuses Put, inheriting the
+// atomic temp+rename write and content-addressed dedup. A non-Taildrive source
+// has no peer path into a passive share and is refused rather than relayed (D8 /
+// never-silent-success). Satisfies Transferer.
+func (b *Taildrive) TransferFrom(ctx context.Context, src Backend, key string) error {
+	st, ok := src.(*Taildrive)
+	if !ok {
+		return fmt.Errorf("backend/taildrive: no node-to-node path from %T into a taildrive share", src)
+	}
+	f, err := os.Open(st.pathFor(key))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return objMissing(key)
+		}
+		return st.nodeErr(err)
+	}
+	defer f.Close()
+	return b.Put(ctx, key, f)
 }
 
 func (b *Taildrive) Delete(_ context.Context, key string) error {

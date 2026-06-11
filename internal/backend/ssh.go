@@ -202,6 +202,45 @@ func (s *SSH) PutOverwrite(ctx context.Context, key string, r io.Reader) error {
 	return nil
 }
 
+// TransferFrom copies key from a source SSH node directly into this node's vault,
+// node-to-node over the tailnet. The transfer command runs ON THE DESTINATION
+// node (via Exec) and reaches back to the source — the client only sends the
+// command string and reads the exit status, so the bytes flow src→dest
+// peer-to-peer and never pass through the client process (D8/D11). rsync is
+// preferred (`rsync -a --partial`, a conservative flag set); its absence is a
+// clean fallback to `ssh src cat … > tmp && mv` run on the dest node, NOT an
+// error. The write lands via a temp + atomic mv (no torn blob). A non-SSH source
+// has no node-to-node path here and is refused rather than relayed. Satisfies
+// Transferer.
+func (s *SSH) TransferFrom(ctx context.Context, src Backend, key string) error {
+	ss, ok := src.(*SSH)
+	if !ok {
+		return fmt.Errorf("backend/ssh: no node-to-node path from %T into an ssh node", src)
+	}
+	if err := s.preflight(ctx); err != nil {
+		return err
+	}
+	srcTarget := shellQuote(ss.target())
+	srcPath := shellQuote(ss.remotePath(key))
+	dstFull := s.remotePath(key)
+	dstDir := shellQuote(path.Dir(dstFull))
+	dst := shellQuote(dstFull)
+	tmp := shellQuote(dstFull + ".tmp")
+	// Run on the dest node: try rsync (peer pull), else stream src→dest via a
+	// nested ssh, then atomically mv into place. Bytes never touch the client.
+	remote := fmt.Sprintf(
+		"mkdir -p %s && { rsync -a --partial -e ssh %s:%s %s 2>/dev/null || "+
+			"{ ssh %s cat %s > %s && mv %s %s; }; }",
+		dstDir, srcTarget, srcPath, dst,
+		srcTarget, srcPath, tmp, tmp, dst,
+	)
+	stderr, err := s.Exec(ctx, nil, remote)
+	if err != nil {
+		return classifyWrite(s.Node, stderr, err)
+	}
+	return nil
+}
+
 func (s *SSH) Delete(ctx context.Context, key string) error {
 	if err := s.preflight(ctx); err != nil {
 		return err

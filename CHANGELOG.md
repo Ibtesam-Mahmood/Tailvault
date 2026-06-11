@@ -6,6 +6,30 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.83 — 2026-06-11
+
+### Added
+- **`vault mv` — intra/cross-location moves (SPEC v2 §10, task-44).** ID-preserving
+  relocation (D19). **Intra-location** (same home): single WAL intent, catalog path
+  rewrite, no transfer, no forwarder; self-move → TV-CFG-01. **Cross-location** (the
+  first two-node mutation): dual WAL intents (shared deterministic op id) ordered
+  per §10 — source intent → dest intent → node-to-node transfer → verify@dest → dest
+  catalog add → dest done → source drop + `moved_to` forwarder → source done. The
+  single-home invariant holds throughout (dest live before source demoted; never
+  zero homes). Source's DONE move record carries `args["moved_to"] = <dest member
+  name>` so a file whose new home is offline is still findable (TV-FED flavor). mv
+  is **password-gated** on every mutated node before any intent (joins the §16 gated
+  set). Manual drift (H12): moved as-is, re-hashed + re-homed under the true content
+  sha at dest with `last_scanned` bumped; git-mode dest mismatch → TV-OBJ, no
+  cut-over. Flags `--on-conflict={copy|rename|stop}`, `--rename-to`,
+  `--password-file`, `--json`.
+- **`backend.Transfer` + `Transferer` seam (internal/backend/transfer.go, task-44).**
+  Peer-to-peer ONLY, no client-relay fallback (D8): a dest backend that can't receive
+  a node-to-node transfer is a hard error. Taildrive does a root-to-root copy through
+  the mounts; SSH runs the copy ON the dest node reaching back to source (rsync
+  preferred, ssh-cat fallback) — bytes never pass through the client (unit-tested:
+  dest ssh stdin stays empty).
+
 ## v0.0.82 — 2026-06-11
 
 ### Added

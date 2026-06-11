@@ -614,3 +614,42 @@
   corruption" case); the roster is replicated, so any one surviving member
   re-sources it. (Wording coordinated with coder-a for verify.)
 - **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-44 (vault mv — cross-location ordering)
+- **Edge case:** ordering of a cross-location move's dual-WAL steps and the
+  single-home invariant.
+- **Decision:** chose — dest becomes live (catalog add + done) BEFORE the source is
+  demoted to a `moved_to` forwarder, so there is a brief TWO-home window (both
+  catalogs hold the entry). This is the spec's intended §10 ordering; reversing it
+  would open a ZERO-home window (data unreachable mid-move). The resolver tolerates
+  the transient duplicate (home-hint / first-found wins).
+- **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-44 (vault mv — manual drift)
+- **Edge case:** moving a manual-mode file that was edited since its last scan
+  (stored bytes ≠ recorded sha).
+- **Decision:** chose — moved as-is; the dest records the re-hashed TRUE content sha
+  (object re-homed under it so `vault get`, which keys by catalog sha, still
+  resolves) and bumps `last_scanned` (the move doubles as a scan). git/non-manual
+  dest-hash mismatch = corruption → TV-OBJ, NO cut-over, pending intents remain.
+- **Follow-up:** none
+
+- **Date / Task:** 2026-06-11 / task-44 (vault mv — concurrent / resume)
+- **Edge case:** a second mv on a blob with a pending move intent, and resuming a
+  crashed move.
+- **Decision:** chose — a second mv while a move intent is in flight → `ErrOpInFlight`
+  → TV-CFG-01 ("op in flight … retry shortly"). A crashed move re-run re-presents the
+  deterministic move op id (shared by both ends) → WAL dedups (ErrDuplicateOp) →
+  resumes to completion with no duplicate intent and no second identity.
+- **Follow-up:** completing a half-done MOVE via `ops retry` needs move-aware retry
+  wiring — coder-c to hook ops↔mv-completion in task-50.
+
+- **Date / Task:** 2026-06-11 / task-44 (vault mv — peer-to-peer transfer only)
+- **Edge case:** how the bytes cross between nodes on a cross-location move.
+- **Decision:** chose — `backend.Transfer` is peer-to-peer ONLY, no client-relay
+  fallback (D8): a dest backend that can't receive a node-to-node transfer is a hard
+  error, never a silent stream-through-the-client. SSH runs the copy ON the dest node
+  reaching back to source (client ships only the command string + reads exit status).
+  The ONLY client-buffered path is the rare manual-drift re-home (Get→buf→Put under
+  the true hash); the primary transfer is always peer-to-peer.
+- **Follow-up:** node-side copy primitive for the drift re-home is a future optimization.
