@@ -6,6 +6,23 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.45 — 2026-06-11
+
+Phase 3 (task-27) — freeze SPEC v2 federation contract. Appends "Part 2 —
+Federation contract (v2)" to `SPEC.md` (additive; v1 §1–§8 untouched) and creates
+`EDGE-CASES.md`. This is the normative base every Blocks 3–4 task cites.
+
+- §9 catalog schema (`meta/catalog.toml` v2, `[[file]]` canonical order, extensible
+  `sync_mode`, unknown-version → exit 2) + §9b `.tailvaultignore`.
+- §10 WAL entry schema + hash-chain rule (`prev_hash`, 64-zero genesis, immutable
+  intent entries + sibling `.done/.failed` markers; fail → TV-FED-03).
+- §11 genesis record + byte-exact serialization + file-ID derivation with a
+  load-bearing test vector (`id=30092d830e26…`).
+- §12 receipts, §13 `[federation]` roster, §14 client caches.
+- §15 `TV-FED-01/02/03` + exit bucket 6 (FED-01 exit 6 vs OBJ-01 exit 5); §16
+  argon2id PHC password file + `TV-AUTH-01` + reads-never-gated / roster-writes-gated.
+- §8b v2 frozen Go API names. Seeds EDGE-CASES.md with DG-27.1/.2/.3.
+
 ## v0.0.44 — 2026-06-11
 
 Phase 3–4 planning artifacts — commits the frozen Part II federation plan ahead of

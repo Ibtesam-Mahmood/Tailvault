@@ -308,6 +308,422 @@ directly; do not introduce aliases.
 failures → `tserr.ConfigErr` → exit 2). All `tserr` constructors take a trailing
 `err error` — pass `nil` when there is no underlying error.
 
+---
+
+# Part 2 — Federation contract (v2)
+
+> **Normative, additive.** Sections §9–§16 freeze the federation/vault formats the
+> same way §1–§8 froze v1. v1 sections are **untouched** (D29: no real v1 vaults
+> exist, so no migration machinery). Every Block 3–4 task cites a section here
+> instead of re-deciding a format. Frozen decisions trace to
+> [`BRAINSTORM-block-3.md`](./BRAINSTORM-block-3.md) (D1–D31) as distilled into
+> [`proposal.md`](./proposal.md) Part II — do not re-litigate them.
+>
+> **All v1 conventions carry forward unchanged:** TOML; RFC3339 UTC timestamps
+> with a `Z` suffix; binary size units (§7); byte-wise-ascending canonical
+> ordering. Where v2 froze a remaining mechanical detail (file layout on the node,
+> field names, PHC string form) it picked the choice consistent with these
+> conventions; such picks are called out inline.
+
+## 9. Catalog schema (`meta/catalog.toml`)
+
+The catalog makes every storage location **self-describing**. It lives at
+`<base_path>/<subpath>/meta/catalog.toml` (the same `<base_path>/<subpath>` root
+as v1 `objects/`). It is written with the v1 atomicity discipline: temp file +
+`fsync` + atomic rename.
+
+### Storage layout on the node (v2 — extends §4)
+
+```
+<base_path>/<subpath>/
+  objects/<sha256>              # v1: content-addressed blobs, deduped
+  refs/<path-id>               # v1: history-on files only, newest-first shas
+  meta/catalog.toml            # §9  self-describing vault state
+  meta/wal/<seq>-<op_id>.toml  # §10 hash-chained per-node WAL (+ sibling markers)
+  meta/auth/passwd             # §16 argon2id password hash, mode 0600
+  meta/manifest.json           # v1: optional bookkeeping (unchanged)
+```
+
+### Top-level fields
+
+| Field | Type | Notes |
+|---|---|---|
+| `version` | int | MUST equal `2`. A reader hitting an **unknown** version MUST fail with a config-style incompatibility error → **exit 2** (H7), exactly like a bad `tailvault.toml`. |
+| `vault_name` | string | human label for this location's vault |
+| `node` | string | the MagicDNS name / `100.x` IP this catalog describes |
+| `[federation]` | table | roster — see [§13](#13-federation-roster-section) |
+| `[[file]]` | array of tables | one per tracked file — see below |
+
+### Per-file `[[file]]` fields (canonical order)
+
+Field order **within** each entry is fixed and is the order below (mirrors the v1
+lock convention). `[[file]]` entries are sorted by `path`, **byte-wise
+ascending**, stable across writes (mirror lock canonical form, §2).
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | 64-hex genesis hash (§11). The stable, location-independent file ID. |
+| `genesis` | inline table | the birth record: `content_sha256`, `original_path`, `ingest_op_id`, `origin_node` (§11). Embedded so the catalog is itself an identity backup. |
+| `sha256` | string | **current** content hash. For `manual` files this drifts from `genesis.content_sha256` after in-place edits until a `scan` re-hashes (H12). |
+| `path` | string | vault-relative **logical** path (display/navigation; moves change it, never `id`). |
+| `sync_mode` | string | `"git"` \| `"manual"`. **Enum is extensible** (D15): an unknown value MUST be preserved on round-trip and treated as **not-git** by gc (i.e. never a gc candidate). |
+| `size` | int | bytes (binary units per §7 apply only to human-typed sizes; this is a raw count). |
+| `created_at` | string | RFC3339 UTC `Z` — first ingest into the catalog. |
+| `updated_at` | string | RFC3339 UTC `Z` — last catalog mutation for this file. |
+| `last_scanned` | string | RFC3339 UTC `Z` — last `vault scan` that re-hashed/verified the on-disk bytes (drives edited-vs-corrupt logic, H12). |
+
+### Sample (verbatim — paste into fixtures)
+
+```toml
+version = 2
+vault_name = "root-pnp"
+node = "home-pi.tailnet-name.ts.net"
+
+[federation]
+fed_id = "5f3c9a1e7b8d2c40a16e9f0b3d4c5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d"
+
+[[federation.member]]
+name      = "home-pi"
+node      = "home-pi.tailnet-name.ts.net"
+joined_at = "2026-06-11T09:00:00Z"
+status    = "active"
+
+[[federation.member]]
+name      = "office-nas"
+node      = "100.92.14.7"
+joined_at = "2026-06-11T09:05:00Z"
+status    = "active"
+
+[[file]]
+id      = "30092d830e2641b447745655bbe4171675720a1aa8cf80e0ae3736e6e43111f0"
+genesis = { content_sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", original_path = "pnp/board.pdf", ingest_op_id = "0192f3a4b5c6d7e8f9a0b1c2d3e4f5a6", origin_node = "home-pi" }
+sha256       = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+path         = "pnp/board.pdf"
+sync_mode    = "manual"
+size         = 41231873
+created_at   = "2026-06-11T09:10:00Z"
+updated_at   = "2026-06-11T09:10:00Z"
+last_scanned = "2026-06-11T09:10:00Z"
+```
+
+### 9b. `.tailvaultignore` semantics
+
+A repo-root / **vault-root** file named `.tailvaultignore`, gitignore-style
+**doublestar** glob patterns (same engine as `tailvault.toml` `include`/`exclude`,
+§1). It is **opt-out only** (it removes paths from bootstrap track-all, D18 path
+2); it is **overridden by an explicit `track`** (D22) — i.e. a path the user
+explicitly tracks is ingested even if `.tailvaultignore` would skip it. Absence
+of the file means "track everything" on bootstrap.
+
+## 10. WAL entry schema + hash-chain rule (`meta/wal/`)
+
+Every storage node keeps its own hash-chained write-ahead log under
+`<base_path>/<subpath>/meta/wal/`. The federated layer is **stateless** — a node's
+WAL is the only record of its own ops (D6). One TOML file per entry, named
+`<seq>-<op_id>.toml` where `<seq>` is **zero-padded to 12 digits**
+(`000000000001-<op_id>.toml`). Appending an entry is an **atomic `Put` of a new
+key** (temp + fsync + rename) — never an in-place edit of an existing entry.
+
+### Entry fields
+
+| Field | Type | Notes |
+|---|---|---|
+| `seq` | int | monotonic per node, starting at `0` for the genesis entry. |
+| `op_id` | string | UUIDv4, lowercase hex (no dashes). Unique → idempotent retry/dedupe. |
+| `prev_hash` | string | 64-hex sha256 over the **canonical on-disk bytes of the previous entry**. The genesis entry (`seq = 0`) uses **64 zeros**. |
+| `op_type` | string | one of `ingest` \| `move` \| `delete` \| `sync_mode` \| `gc` \| `roster` \| `scan`. |
+| `args` | table | op-typed argument table (shape defined by the op; e.g. `move` carries `from`/`to`/`moved_to`). |
+| `blob_refs` | []string | file **IDs** (§11) this op locks — the basis of WAL-as-lock (D12). |
+| `state` | string | always written as `"intent"` (see immutability rule). |
+| `actor` | string | identity from `tailscale whois`, falling back to git `user.email` (§6 Q7). |
+| `created_at` | string | RFC3339 UTC `Z`. |
+| `updated_at` | string | RFC3339 UTC `Z`; equals `created_at` at write time and is **never rewritten** (see immutability rule). |
+
+### Hash-chain rule (normative)
+
+Each entry's hash is `sha256` over its **entire canonical serialized bytes**
+(excluding nothing). `prev_hash` links entry *n* to entry *n−1*. Any reader
+replaying the chain MUST verify **every** link and **fail** on the first break
+(tamper-evident, D17) → **`TV-FED-03`**, exit bucket 6. The canonical byte form
+of a WAL entry (deterministic field order, LF endings) is frozen by **Task 29**,
+which MUST publish a worked hash test vector alongside its implementation.
+
+### Immutability + state markers (normative — do NOT simplify to in-place edits)
+
+The entry file is **immutable** once written, so the chain never re-hashes on a
+state change. Its `state` is always `"intent"` and its `updated_at` equals
+`created_at`. A terminal transition is recorded by writing a **sibling marker
+file** next to the entry:
+
+- `<seq>-<op_id>.done` — op completed.
+- `<seq>-<op_id>.failed` — op failed (surfaces in `ops`, retryable).
+
+Each marker is a small TOML: `{ op_id, seq, state ("done"|"failed"), at (RFC3339
+UTC Z) }`. The **effective state** of an op = the marker's state if a marker
+exists, else `intent`. Write-ahead ordering (proposal Part II atomicity
+standards): WAL intent → blob bytes → catalog → WAL `.done` marker; a crash
+anywhere is detectable and repairable by `verify`/`heal`. Done entries are pruned
+by journal gc (H9) — pruning removes an entry only when its `.done` marker exists
+AND no later entry's `prev_hash` still needs it for chain continuity (Task 29
+freezes the exact pruning rule).
+
+### Sample genesis entry (verbatim)
+
+```toml
+seq        = 0
+op_id      = "0192f3a4b5c6d7e8f9a0b1c2d3e4f5a6"
+prev_hash  = "0000000000000000000000000000000000000000000000000000000000000000"
+op_type    = "ingest"
+blob_refs  = ["30092d830e2641b447745655bbe4171675720a1aa8cf80e0ae3736e6e43111f0"]
+state      = "intent"
+actor      = "ibte@laptop"
+created_at = "2026-06-11T09:10:00Z"
+updated_at = "2026-06-11T09:10:00Z"
+
+[args]
+path           = "pnp/board.pdf"
+content_sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+origin_node    = "home-pi"
+sync_mode      = "manual"
+```
+
+## 11. Genesis record + file-ID derivation
+
+A file's **ID** is the sha256 of its **genesis record** — its birth fact, taken
+from the ingest WAL entry. Dual addressing (D19): the ID is stable and
+location-independent (used for all linking/lock/reference); the logical `path`
+(§9) is for display/navigation. **Moves change the path, never the ID.**
+
+### Genesis record
+
+The record has exactly four fields in this **fixed order**:
+`content_sha256`, `original_path`, `ingest_op_id`, `origin_node`.
+
+### Canonical serialization (byte-exact — load-bearing)
+
+> A whitespace difference changes every file ID in existence. The serialization is
+> frozen as **explicit byte construction**, NOT "run a TOML encoder" (encoder
+> output varies across libraries).
+
+Produce exactly four lines, in the field order above, each of the form:
+
+```
+key = "value"
+```
+
+- exactly one ASCII space on each side of `=`;
+- the value is enclosed in double quotes and escaped with **TOML basic-string
+  escaping** (`\` → `\\`, `"` → `\"`, and the control escapes `\b \t \n \f \r`,
+  other control chars as `\uXXXX`);
+- each line terminated by a **single LF** (`\n`), **including the last line**;
+- UTF-8, no BOM, no blank lines, no leading/trailing whitespace.
+
+Then `id = lowercasehex( sha256( those bytes ) )`.
+
+### Properties
+
+- **Unique** — `ingest_op_id` + `original_path` salt the hash, so two identical
+  files ingested at different paths/times get different IDs.
+- **Location-independent** — nothing about the current home is in the record;
+  moves never touch it.
+- **Regeneratable** — anyone holding the genesis record recomputes the ID
+  byte-for-byte (no random state, no counter). NOT regeneratable from the file
+  bytes alone (manual files drift — H12), which is why the record is the input.
+- **Self-certifying** — `sha256(record) == id` proves the record (basis of
+  identity recovery, D24).
+- **Short display form** — the first **12 hex** chars (like a git short SHA).
+- The ID is **NOT** the content hash (D19/H12).
+
+### Worked example (test vector — Task 30 MUST reproduce byte-for-byte)
+
+Record fields:
+`content_sha256 = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`
+(the sha256 of empty input, a recognizable constant),
+`original_path = pnp/board.pdf`, `ingest_op_id = 0192f3a4b5c6d7e8f9a0b1c2d3e4f5a6`,
+`origin_node = home-pi`.
+
+Canonical bytes (each line LF-terminated):
+
+```
+content_sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+original_path = "pnp/board.pdf"
+ingest_op_id = "0192f3a4b5c6d7e8f9a0b1c2d3e4f5a6"
+origin_node = "home-pi"
+```
+
+⇒ `id  = 30092d830e2641b447745655bbe4171675720a1aa8cf80e0ae3736e6e43111f0`
+⇒ short = `30092d830e26`
+
+### Identity recovery (cross-reference)
+
+Because the ID is self-certifying, the genesis record is replicated for recovery
+(D24): **lock entries embed the full genesis record** (D24a — every repo clone is
+an off-node identity backup; the lock-schema-v2 change that carries it is
+specified in **Task 35**, not here), every `vault get` writes a **pull receipt**
+(§12), and `vault restore-identity` re-seeds a rebuilt catalog after verifying
+`sha256(record) == id` (never implicit).
+
+## 12. Pull receipt format (`~/.tailvault/receipts/<id>.toml`)
+
+Written by **every `vault get`** (D24b); read by `vault restore-identity` (Block
+4). Client-side, one file per file-ID.
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | 64-hex file ID. |
+| `genesis` | inline table | the full genesis record (§11) — the recoverable birth fact. |
+| `path` | string | logical path at pull time. |
+| `sha256_at_pull` | string | content hash of the bytes actually downloaded. |
+| `pulled_at` | string | RFC3339 UTC `Z`. |
+| `source_node` | string | the member the bytes came from. |
+
+```toml
+id = "30092d830e2641b447745655bbe4171675720a1aa8cf80e0ae3736e6e43111f0"
+genesis = { content_sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", original_path = "pnp/board.pdf", ingest_op_id = "0192f3a4b5c6d7e8f9a0b1c2d3e4f5a6", origin_node = "home-pi" }
+path           = "pnp/board.pdf"
+sha256_at_pull = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+pulled_at      = "2026-06-11T10:00:00Z"
+source_node    = "home-pi.tailnet-name.ts.net"
+```
+
+## 13. `[federation]` roster section
+
+Lives inside each member's catalog (§9). The roster is mirrored across members;
+each member's catalog carries the same logical roster (propagated by WAL `roster`
+ops, §10).
+
+| Field | Type | Notes |
+|---|---|---|
+| `fed_id` | string | 64-hex; minted at `fed init` as the sha256 of the **init op's genesis WAL entry** (canonical bytes per §10). Stable federation identity. |
+| `[[federation.member]].name` | string | member label. |
+| `[[federation.member]].node` | string | MagicDNS / `100.x`. |
+| `[[federation.member]].joined_at` | string | RFC3339 UTC `Z`. |
+| `[[federation.member]].status` | string | `active` \| `left` \| `evicted`. |
+
+**Lifecycle:** `leave` and `evict` **keep the member row** with a status change
+(never delete it) — history matters for the WARN messages readers see (D28). A
+`left`/`evicted` member's files drop out of the federated tree; its disk is
+untouched (D28).
+
+## 14. Client cache format (`~/.tailvault/cache/fed-<fed_id>/`)
+
+Two files: `current.toml` and `previous.toml`. On **every successful federation
+read** the client rotates `current → previous` and writes a fresh `current`.
+**Advisory only — live pings always win** (D26). Used to distinguish "was here,
+now offline" from "never existed" (improves partial-view UX, H4) and to detect
+roster/state changes.
+
+| Field | Type | Notes |
+|---|---|---|
+| `fed_id` | string | 64-hex (matches §13). |
+| `taken_at` | string | RFC3339 UTC `Z` snapshot time. |
+| `[[member]].name` / `.node` / `.status` | string | roster snapshot. |
+| `[[member]].reachable` | bool | reachability at snapshot time. |
+| `[[member]].last_seen` | string | RFC3339 UTC `Z`, last time this member answered. |
+| `[[member]].file_count` | int | per-member catalog summary. |
+| `[[member]].ids` | []string | file IDs the member reported (summary). |
+
+```toml
+fed_id   = "5f3c9a1e7b8d2c40a16e9f0b3d4c5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d"
+taken_at = "2026-06-11T10:00:00Z"
+
+[[member]]
+name       = "home-pi"
+node       = "home-pi.tailnet-name.ts.net"
+status     = "active"
+reachable  = true
+last_seen  = "2026-06-11T10:00:00Z"
+file_count = 1
+ids        = ["30092d830e2641b447745655bbe4171675720a1aa8cf80e0ae3736e6e43111f0"]
+```
+
+## 15. `TV-FED-*` codes + exit bucket 6 (extends §5)
+
+| Code | Cause | Fix | Exit bucket |
+|---|---|---|---|
+| `TV-FED-01` | partial view — object not found among **reachable** members and **≥1 member unreachable** ("cannot prove absence") | bring the offline member(s) online and retry, or `tailvault ops`/cache to see last-known state | 6 |
+| `TV-FED-02` | a federation op that needs **ALL** members (gc) ran with **≥1 member unreachable** (D27/R3 gate) | bring all members online and retry; deletes never tolerate partial views | 6 |
+| `TV-FED-03` | WAL **hash-chain verification failed** (tamper / corruption) | inspect with chain-verify tooling (Block 5); restore the affected node's WAL from a clone/backup | 6 |
+| `TV-AUTH-01` | password missing/rejected on a mutating remote op (mv, rm, sync-mode change, remote gc, evict, roster writes incl. `fed join`/`leave`/`evict`) | re-run with the correct password, or reset the hash over SSH/physical access | 2 |
+
+### Exit-code buckets (extends §5)
+
+| Exit | Meaning |
+|---|---|
+| `6` | federation / partial view (`TV-FED-*`) — a reachability-scoped read or all-members op could not be satisfied because ≥1 member was unreachable, or a WAL chain failed verification |
+
+(`TV-AUTH-01` reuses bucket **2** — precondition/auth; the op is refused before
+any work, exactly like a config precondition. No new bucket.)
+
+### Resolution semantics (normative — restated)
+
+For a `get`/`stat`/`mv`/`rm` targeting a specific file:
+
+1. **Found at its recorded home** → success.
+2. **Found at a different reachable member** (via fan-out or a `moved_to`
+   forwarding record) → success **+ WARN** ("home moved — run `tailvault heal`").
+3. **Not found among reachable members AND ≥1 member unreachable** →
+   **`TV-FED-01`** (exit 6) — cannot prove absence.
+4. **Not found, all members reachable, no pending `move`** → **`TV-OBJ-01`**
+   (exit 5) — genuinely missing.
+
+This `TV-FED-01` (exit 6) vs `TV-OBJ-01` (exit 5) distinction is a hard
+invariant. Every remote view carries reachability metadata.
+
+## 16. Password hash file + auth (`meta/auth/passwd`)
+
+A single-line **argon2id** hash in canonical **PHC string format**, at
+`<base_path>/<subpath>/meta/auth/passwd`, mode **`0600`**:
+
+```
+$argon2id$v=19$m=65536,t=3,p=4$<salt-b64>$<hash-b64>
+```
+
+- Produced via `golang.org/x/crypto/argon2` (`IDKey`) — **never roll our own
+  crypto** (D8).
+- Parameters frozen: `m = 65536` (64 MiB), `t = 3`, `p = 4`; **16-byte** random
+  salt; **32-byte** derived key.
+- `<salt-b64>` / `<hash-b64>` are standard-alphabet base64 **without padding**
+  (`=` stripped), per the PHC string spec.
+- **No recovery:** reset requires SSH/physical access to rewrite the file (D9, H8).
+
+> **Mechanical detail frozen (DG-27.1):** task-27's brief wrote the string without
+> the leading `$`; SPEC v2 freezes the **canonical PHC form with the leading `$`**
+> (and unpadded base64), which is what `x/crypto` consumers interoperate with.
+
+### Reads are never password-gated (normative)
+
+The password authorizes **mutating remote ops only**. **Reads
+(`ls`/`stat`/`get`/`search`) are NEVER password-gated** — they ride the tailnet
+ACL + SSH alone (D9). State this rule wherever a command checks auth.
+
+### `TV-AUTH-01` (see §15 table)
+
+Missing/rejected password on a mutating remote op → `TV-AUTH-01`, **exit bucket
+2**. The op is refused before any work.
+
+### Roster writes are gated (explicit ruling)
+
+`fed join` — and **every** other roster update: `leave` applied remotely, and
+`evict` — writes the `[federation]` section (§13) of **each member's** catalog and
+is therefore a **mutating op on each member: it IS password-gated** per the
+default rule. **Each member's own password authorizes the roster write on that
+member.** Pending roster ops queued for currently-unreachable members carry the
+**same** requirement when later retried. Block 4's `fed` tasks cite this ruling
+directly.
+
+## 8b. Frozen Go API names (v2 — extends §8)
+
+Reserved so workstreams don't guess at symbols; Tasks 28–31 fill in the detail.
+Consume these directly; do not introduce aliases.
+
+| Package | Reserved symbols |
+|---|---|
+| `internal/catalog` | type `Catalog` (fields incl. `Version`, `VaultName`, `Node`, `Federation`, `Files []File`); type `File` (`ID`, `Genesis`, `SHA256`, `Path`, `SyncMode`, `Size`, `CreatedAt`/`UpdatedAt`/`LastScanned time.Time`) |
+| `internal/wal` | type `Entry` (`Seq`, `OpID`, `PrevHash`, `OpType`, `Args`, `BlobRefs`, `State`, `Actor`, `CreatedAt`/`UpdatedAt`); type `Log` (append/read/verify-chain/prune) |
+| `internal/identity` | type `Genesis` (`ContentSHA256`, `OriginalPath`, `IngestOpID`, `OriginNode`); `MintID(Genesis) string`; type `Receipt` |
+| `internal/fed` | type `Roster` (`FedID`, `Members []Member`); type `Member` (`Name`, `Node`, `JoinedAt`, `Status`); type `Snapshot` (client cache) |
+
 ## Cross-references
 
 - [`proposal.md`](./proposal.md) — Detailed Design (all schema blocks), Error
