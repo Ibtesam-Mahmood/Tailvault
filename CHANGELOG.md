@@ -6,6 +6,23 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.96 — 2026-06-11
+
+### Added
+- **Auth-verifier test seam — drives the REAL gate path (for the §16 behavioral
+  matrix + task-50 auth coverage).** Two cycle-free halves:
+  - cli (`vault_auth.go`): `SetTestGateVerifier` lets a test inject an in-memory
+    verifier into `gateLocation` so the real `auth.Gate → Verify → argon2id` path
+    fires without SSH/Ping — production behavior unchanged (nil seam = current
+    behavior; DEV-46.8 untouched).
+  - fedtest (`harness.go`): `Member.SetPassword`/`ClearPassword` write/remove a real
+    argon2id `meta/auth/passwd` in the member dir, and `Fed.Verifier` wires it to
+    `cli.SetTestGateVerifier`. A test drives a gated command against a protected
+    member with no/wrong password → real gateLocation → TV-AUTH-01 before any
+    mutation; correct password → proceeds. A command that forgot to gate would
+    wrongly succeed (so the behavioral matrix catches missing gates, like gc's).
+  This is the lynchpin the task-50 auth matrix + #43's behavioral half build on.
+
 ## v0.0.95 — 2026-06-11
 
 ### Added

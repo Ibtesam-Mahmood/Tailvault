@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Ibtesam-Mahmood/tailvault/internal/auth"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/backend"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/locations"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/tserr"
@@ -61,6 +62,48 @@ func TestGateLocation_SSH(t *testing.T) {
 	err := gateLocation(ctx, loc, &backend.SSH{User: "ibte", Node: "home-pi", BasePath: "/mnt/ssd/tv", R: rejRunner}, "home-pi", pwFile(t, "wrong"))
 	if !isTVCode(err, tserr.AuthRequired) {
 		t.Errorf("ssh wrong password: want TV-AUTH-01, got %v", err)
+	}
+}
+
+func TestGateLocation_MemoryVerifierSeam(t *testing.T) {
+	// The fedtest auth seam: gateLocation drives the REAL gate (auth.Gate → Verify →
+	// argon2id) against an in-memory password for a "protected" member, with NO SSH.
+	// This is the backbone of the §16 behavioral auth matrix (fix-46 46.C / task-50).
+	ctx := context.Background()
+	hf, err := auth.NewHashFile([]byte("sesame"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	SetTestGateVerifier(func(name string) (auth.Verifier, bool) {
+		switch name {
+		case "protected":
+			return auth.MemoryVerifier{HF: hf, Set: true}, true
+		case "nopw":
+			return auth.MemoryVerifier{Set: false}, true // models "no password set"
+		default:
+			return nil, false // unmanaged → normal SSH/no-op logic
+		}
+	})
+	defer SetTestGateVerifier(nil)
+
+	loc := locations.Location{Backend: locations.BackendTaildrive, BasePath: t.TempDir()}
+	b := backend.NewTaildrive(loc.BasePath)
+
+	// Correct password → proceeds (nil).
+	if err := gateLocation(ctx, loc, b, "protected", pwFile(t, "sesame")); err != nil {
+		t.Errorf("correct password: %v", err)
+	}
+	// Wrong password → TV-AUTH-01 (driven through the real argon2id verify).
+	if err := gateLocation(ctx, loc, b, "protected", pwFile(t, "wrong")); !isTVCode(err, tserr.AuthRequired) {
+		t.Errorf("wrong password: want TV-AUTH-01, got %v", err)
+	}
+	// No password set on the member → TV-AUTH-01.
+	if err := gateLocation(ctx, loc, b, "nopw", pwFile(t, "anything")); !isTVCode(err, tserr.AuthRequired) {
+		t.Errorf("no password set: want TV-AUTH-01, got %v", err)
+	}
+	// An unmanaged taildrive member → seam declines → ungated (DEV-46.8 preserved).
+	if err := gateLocation(ctx, loc, b, "other", pwFile(t, "x")); err != nil {
+		t.Errorf("unmanaged taildrive member must stay ungated, got %v", err)
 	}
 }
 

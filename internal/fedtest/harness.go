@@ -28,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Ibtesam-Mahmood/tailvault/internal/auth"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/backend"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/catalog"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/fed"
@@ -59,6 +60,39 @@ type Member struct {
 	// create-exclusive under genuine parallelism (two racers can both rename, last
 	// wins), so production's "one client" model is reproduced by serializing here
 	// rather than relying on the filesystem.
+
+	// Auth state for the §16 gate seam (opt-in; default = unprotected → ungated, so
+	// data scenarios need no password). SetPassword/ClearPassword toggle these; the
+	// gate consults them via Fed.Verifier → cli.SetTestGateVerifier.
+	protected bool
+	pwSet     bool
+	hf        auth.HashFile
+}
+
+// SetPassword marks the member as password-PROTECTED and sets pw as its node
+// password (a real argon2id hash, in memory). Driving a §16-gated command against
+// it with a wrong/absent candidate then refuses with TV-AUTH-01 through the REAL
+// gateLocation→auth.Gate→Verify path (only the SSH transport is bypassed — the
+// gate logic under test is unchanged). Idempotent.
+func (m *Member) SetPassword(t *testing.T, pw string) {
+	t.Helper()
+	hf, err := auth.NewHashFile([]byte(pw))
+	if err != nil {
+		t.Fatalf("fedtest: hash password for %q: %v", m.Name, err)
+	}
+	m.hf = hf
+	m.protected = true
+	m.pwSet = true
+}
+
+// ClearPassword marks the member PROTECTED but with NO password set — modelling a
+// gated node on which `vault passwd` was never run. A gated command against it
+// refuses with TV-AUTH-01 (the ErrNoPassword path), never silently proceeds.
+func (m *Member) ClearPassword(t *testing.T) {
+	t.Helper()
+	m.protected = true
+	m.pwSet = false
+	m.hf = auth.HashFile{}
 }
 
 // SetDown toggles unreachability. While down, the member's prober fails and
@@ -159,6 +193,30 @@ func New(t *testing.T, names ...string) *Fed {
 		writeCatalog(t, m, cat)
 	}
 	return f
+}
+
+// lookup returns the named member or nil (the t-less getter the gate verifier
+// seam uses).
+func (f *Fed) lookup(name string) *Member { return f.byName[name] }
+
+// Verifier is the gate seam the cli auth test installs via
+// cli.SetTestGateVerifier(f.Verifier): it returns the in-memory auth.Verifier for
+// a PROTECTED member so a §16-gated command runs the REAL gate path against it.
+// An unprotected member returns (nil, false) → the production SSH/no-op logic
+// stands (ungated). A protected-but-no-password member returns a verifier on the
+// ErrNoPassword path. Wire it from the CONSUMING package (cli) — NOT from inside
+// fedtest — so fedtest never imports cli (which would cycle):
+//
+//	cli.SetTestGateVerifier(f.Verifier); t.Cleanup(func() { cli.SetTestGateVerifier(nil) })
+func (f *Fed) Verifier(name string) (auth.Verifier, bool) {
+	m := f.lookup(name)
+	if m == nil || !m.protected {
+		return nil, false // never protected → ungated (production logic stands)
+	}
+	if !m.pwSet {
+		return auth.MemoryVerifier{Set: false}, true // ErrNoPassword path
+	}
+	return auth.MemoryVerifier{HF: m.hf, Set: true}, true
 }
 
 // Member returns the named member (fatal if unknown).

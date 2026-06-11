@@ -51,6 +51,21 @@ func (v sshVerifier) VerifyPassword(ctx context.Context, candidate []byte) (bool
 	}
 }
 
+// testGateVerifier is a TEST SEAM (nil in production). When installed via
+// SetTestGateVerifier (the fedtest harness only), gateLocation consults it to
+// obtain the Verifier for a location by name: returning (verifier, true) makes
+// that member password-gated against an in-memory hash (no SSH); returning
+// (nil, false) leaves the normal SSH-only logic in force. This lets the §16
+// behavioral auth matrix (fix-46 46.C / task-50) drive the REAL gate path —
+// auth.Gate → Verifier.VerifyPassword → argon2id — with no SSH and without
+// replacing gateLocation itself (only the transport/verifier is in-memory).
+var testGateVerifier func(name string) (auth.Verifier, bool)
+
+// SetTestGateVerifier installs (or clears, with nil) the test gate-verifier seam.
+// TEST-ONLY: production code never calls it; when nil, gateLocation's SSH path is
+// exactly as before (taildrive/local ungated, DEV-46.8).
+func SetTestGateVerifier(fn func(name string) (auth.Verifier, bool)) { testGateVerifier = fn }
+
 // gateLocation enforces the per-node password for a MUTATING op on a location
 // (D9 / SPEC v2 §16) — call it BEFORE any WAL intent / byte move. Verification is
 // done ON THE NODE over SSH (the stored hash never leaves the node). Every
@@ -65,12 +80,28 @@ func (v sshVerifier) VerifyPassword(ctx context.Context, candidate []byte) (bool
 // password-gated here — its mutations rely on the tailnet ACL + the OS mount
 // permissions (documented; the threat model revisits this in Block 5). Returning
 // nil for non-SSH is deliberate, not a silent skip of a required check.
+//
+// TEST SEAM: when testGateVerifier is installed (fedtest harness only), it may
+// supply the Verifier for a protected member by name, so the behavioral §16 auth
+// matrix (fix-46 46.C / task-50) drives the REAL gate path — auth.Gate →
+// Verifier.VerifyPassword → argon2id — against an in-memory password with NO SSH,
+// WITHOUT replacing gateLocation. It is nil in production; the SSH path is
+// unchanged.
 func gateLocation(ctx context.Context, loc locations.Location, b backend.Backend, name, passwordFile string) error {
-	s, ok := b.(*backend.SSH)
-	if !ok {
-		return nil // taildrive/local: ungated (no node-side verify possible)
+	var v auth.Verifier
+	if testGateVerifier != nil {
+		if tv, ok := testGateVerifier(name); ok {
+			v = tv // harness-managed protected member (in-memory verifier)
+		}
 	}
-	err := auth.Gate(ctx, sshVerifier{ssh: s, vaultBase: loc.BasePath}, auth.ReadOpts{
+	if v == nil {
+		s, ok := b.(*backend.SSH)
+		if !ok {
+			return nil // taildrive/local: ungated (no node-side verify possible)
+		}
+		v = sshVerifier{ssh: s, vaultBase: loc.BasePath}
+	}
+	err := auth.Gate(ctx, v, auth.ReadOpts{
 		PasswordFile: passwordFile,
 		Prompt:       "Password for " + name + ": ",
 	})
