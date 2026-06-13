@@ -6,6 +6,21 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.115 — 2026-06-13
+
+### Fixed
+- **Release pipeline: revert `sigstore/cosign-installer` to `@v3.10.1`.** cosign
+  v4 deprecated `--output-signature`/`--output-certificate` in favor of
+  `--bundle` and defaults to the new bundle format, so the v3-style `signs` args
+  in `.goreleaser.yaml` failed with *"create bundle file: open : no such file or
+  directory"* — builds succeeded but signing aborted, again publishing no
+  assets (so `tailvault update` saw nothing newer than the last good release,
+  v0.0.106). v3.10.1 is the exact signing config that shipped v0.0.106.
+  Migrating the `signs` block to cosign v4's `--bundle` format is left as a
+  separate task. v0.0.113/v0.0.114 have no published releases; **v0.0.115 is the
+  first good release** carrying the tailscale auto-detect work + `tailvault
+  config`.
+
 ## v0.0.114 — 2026-06-13
 
 ### Fixed

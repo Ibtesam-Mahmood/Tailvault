@@ -30,7 +30,7 @@ jobs:
           cache: true
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@v4.1.2
+        uses: sigstore/cosign-installer@v3.10.1
 
       - name: Install syft (SBOM generation)
         uses: anchore/sbom-action/download-syft@v0
