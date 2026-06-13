@@ -11,8 +11,11 @@ For the concepts behind these commands see [`how-it-works.md`](./how-it-works.md
 ## Quick start (repo-managed mode)
 
 ```sh
-# 1. Register a storage node (interactive — writes ~/.config/tailvault/locations.toml)
+# 1. Create a storage location (writes ~/.config/tailvault/locations.toml).
+#    Default is a LOCAL store on this machine:
 tailvault setup
+#    …or register a remote tailnet node instead:
+tailvault setup --remote
 
 # 2. In your repo: write tailvault.toml + .gitattributes and install hooks
 tailvault init
@@ -49,9 +52,11 @@ tailvault vault get models/big.stl    # download by path or ID (no password need
 
 | Command | What it does |
 | --- | --- |
-| `tailvault setup` | Interactively register a storage node, then prompts you to run `init`. |
+| `tailvault setup` | **Default: create a local storage location** on this machine (prompts for a name + store path), then prompts you to run `init`. |
+| `tailvault setup --remote` | Register a **remote tailnet node** instead (the peer pick-list; `--node` skips it). |
+| `tailvault config` | Locate + register the `tailscale` CLI (fixes peer discovery when Tailscale is a GUI app off `PATH`). |
 | `tailvault init` | Write `tailvault.toml` + `.gitattributes` and install git hooks in the current repo. |
-| `tailvault location add <name>` | Register a tailnode storage target (writes `locations.toml`). |
+| `tailvault location add <name>` | Register a storage target (writes `locations.toml`). `--backend local\|ssh\|taildrive`; `local` needs only `--base-path`. |
 | `tailvault location list` | List registered locations + live reachability. |
 
 ### Repo-managed workflow

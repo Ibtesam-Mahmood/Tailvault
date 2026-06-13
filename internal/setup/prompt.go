@@ -2,6 +2,7 @@ package setup
 
 import (
 	"os"
+	"path/filepath"
 
 	"github.com/Ibtesam-Mahmood/tailvault/internal/locations"
 )
@@ -18,6 +19,32 @@ type Prompter interface {
 	SelectPeer(peers []Peer) (Peer, error) // pick-list; only when discovery is viable
 	AskString(label, def string) (string, error)
 	AskBackend() (string, error) // "ssh" | "taildrive"
+}
+
+// DefaultLocalStore returns the default per-name local store path,
+// ~/.tailvault/stores/<name>. It is deliberately OUTSIDE any repo so the
+// content-addressed blobs never enter git (the whole point of tailvault). When
+// the home dir can't be resolved it falls back to a relative path.
+func DefaultLocalStore(name string) string {
+	if name == "" {
+		name = "home"
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return filepath.Join(".tailvault", "stores", name)
+	}
+	return filepath.Join(home, ".tailvault", "stores", name)
+}
+
+// BuildLocalLocation builds a local-backend Location, prompting only for the
+// store path (defaulting to the per-name home store). A local store has no node,
+// user, or share — it is a content-addressed directory on this machine.
+func BuildLocalLocation(p Prompter, name string) (locations.Location, error) {
+	path, err := p.AskString("local store path", DefaultLocalStore(name))
+	if err != nil {
+		return locations.Location{}, err
+	}
+	return locations.Location{Backend: locations.BackendLocal, BasePath: path}, nil
 }
 
 // BuildLocation runs the registration flow and returns a locations.Location

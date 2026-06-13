@@ -136,6 +136,9 @@ func backendForLocation(loc locations.Location, name string) (backend.Backend, e
 		}
 	}
 	switch loc.Backend {
+	case locations.BackendLocal:
+		// Content-addressed local filesystem store — no node, no tailnet hop.
+		return backend.NewFSBackend(loc.BasePath), nil
 	case locations.BackendSSH:
 		if loc.User == "" {
 			return nil, tserr.ConfigErr("ssh location "+name+" missing user", nil)
@@ -164,8 +167,10 @@ func memberProbe(reg locations.Registry) func(ctx context.Context, m catalog.Mem
 			return fmt.Errorf("member %q not registered", m.Name)
 		}
 		switch loc.Backend {
-		case locations.BackendTaildrive:
-			// A passive share: reachable iff its mounted base_path is a directory.
+		case locations.BackendTaildrive, locations.BackendLocal:
+			// A passive store (mounted share or local dir): reachable iff its
+			// base_path holds a catalog. (Local members are non-federated in normal
+			// use, but probing one must not panic — treat it like a share.)
 			b, err := backendForLocation(loc, m.Name)
 			if err != nil {
 				return err

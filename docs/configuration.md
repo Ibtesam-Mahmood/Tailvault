@@ -48,12 +48,20 @@ login user. Written interactively by `tailvault setup` / `tailvault location add
 [locations.node-a]
 node      = "node-a.example-net.ts.net"  # MagicDNS or 100.x IP
 base_path = "/mnt/ssd/tailvault"            # on a USB3 SSD, not the boot SD
-backend   = "ssh"                           # ssh | taildrive (taildrive planned)
+backend   = "ssh"                           # local | ssh | taildrive (taildrive planned)
 user      = "user"
+
+[locations.home]                            # a LOCAL store — base_path only, no node
+base_path = "/Users/you/.tailvault/stores/home"
+backend   = "local"
 ```
 
 `node` is prefilled from `tailscale status --json` peer enumeration (local session
-only). `--node` is always available as a manual fallback.
+only). `--node` is always available as a manual fallback. A **local** location
+(`backend = "local"`) has no node/user/share — just a `base_path` directory on
+this machine; it is created by the default `tailvault setup` (use
+`tailvault setup --remote` to register a tailnet node). Local stores are
+standalone — they cannot join a federation.
 
 ---
 

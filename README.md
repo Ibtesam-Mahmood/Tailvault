@@ -174,7 +174,7 @@ Then `tailvault update` self-updates; `tailvault update --uninstall` removes it.
 ## Quick start (repo-managed mode)
 
 ```sh
-tailvault setup                  # register a storage node (interactive)
+tailvault setup                  # create a local storage location (or: setup --remote for a node)
 tailvault init                   # write tailvault.toml + .gitattributes + hooks
 tailvault track "**/*.pdf"       # track large files by rule or path
 git add . && git commit -m "add big assets"

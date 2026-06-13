@@ -21,6 +21,7 @@ type Backend string
 const (
 	BackendSSH       Backend = "ssh"
 	BackendTaildrive Backend = "taildrive"
+	BackendLocal     Backend = "local" // content-addressed local filesystem; no node/user/share
 )
 
 // Location is a single registered storage target.
@@ -109,27 +110,37 @@ func (r *Registry) Add(name string, loc Location) error {
 	return nil
 }
 
-// Validate checks that a Location has the fields its backend requires.
+// Validate checks that a Location has the fields its backend requires. Every
+// backend needs base_path; ssh/taildrive additionally need a node (and user /
+// share), while local needs ONLY base_path and rejects node/user/share so a
+// stray value (e.g. a half-edited remote entry) is caught rather than ignored.
 func (loc Location) Validate() error {
-	if loc.Node == "" {
-		return tserr.ConfigErr("location: node is required", nil)
-	}
 	if loc.BasePath == "" {
 		return tserr.ConfigErr("location: base_path is required", nil)
 	}
 	switch loc.Backend {
+	case BackendLocal:
+		if loc.Node != "" || loc.User != "" || loc.Share != "" {
+			return tserr.ConfigErr("location: local backend takes only base_path (no node/user/share)", nil)
+		}
 	case BackendSSH:
+		if loc.Node == "" {
+			return tserr.ConfigErr("location: node is required", nil)
+		}
 		if loc.User == "" {
 			return tserr.ConfigErr("location: ssh backend requires user", nil)
 		}
 	case BackendTaildrive:
+		if loc.Node == "" {
+			return tserr.ConfigErr("location: node is required", nil)
+		}
 		if loc.Share == "" {
 			return tserr.ConfigErr("location: taildrive backend requires share", nil)
 		}
 	case "":
-		return tserr.ConfigErr("location: backend is required (ssh|taildrive)", nil)
+		return tserr.ConfigErr("location: backend is required (local|ssh|taildrive)", nil)
 	default:
-		return tserr.ConfigErr(fmt.Sprintf("location: unknown backend %q (want ssh|taildrive)", loc.Backend), nil)
+		return tserr.ConfigErr(fmt.Sprintf("location: unknown backend %q (want local|ssh|taildrive)", loc.Backend), nil)
 	}
 	return nil
 }

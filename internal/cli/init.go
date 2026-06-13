@@ -64,6 +64,7 @@ func runInit(cmd *cobra.Command, location string) error {
 
 	// 1. Default tailvault.toml if absent; never overwrite a user's edits.
 	cfgPath := filepath.Join(repoRoot, "tailvault.toml")
+	freshNoLocation := false
 	if _, statErr := os.Stat(cfgPath); statErr == nil {
 		fmt.Fprintln(out, "tailvault.toml already exists — leaving it untouched")
 	} else if os.IsNotExist(statErr) {
@@ -73,6 +74,7 @@ func runInit(cmd *cobra.Command, location string) error {
 			return tserr.ConfigErr("init: write tailvault.toml", err)
 		}
 		fmt.Fprintln(out, "wrote tailvault.toml")
+		freshNoLocation = location == ""
 	} else {
 		return tserr.ConfigErr("init: stat tailvault.toml", statErr)
 	}
@@ -100,6 +102,11 @@ func runInit(cmd *cobra.Command, location string) error {
 		return fmt.Errorf("init: install hooks: %w", err)
 	}
 	fmt.Fprintln(out, "installed git hooks (pre-push, post-merge, post-checkout)")
+
+	// Nudge toward creating a store when the repo has nothing to push to yet.
+	if freshNoLocation {
+		fmt.Fprintln(out, "no storage location set yet — run `tailvault setup` for a local store, or `tailvault setup --remote` for a node")
+	}
 	return nil
 }
 

@@ -66,6 +66,9 @@ func runFedInit(cmd *cobra.Command, locName string, jsonOut bool) error {
 	if err != nil {
 		return err
 	}
+	if loc.Backend == locations.BackendLocal {
+		return tserr.ConfigErr("fed init: local backend cannot host a federation (local stores are standalone)", nil)
+	}
 	cat, err := readCatalog(ctx, b)
 	if err != nil {
 		return tserr.NodeOfflineErr(loc.Node, err)
@@ -160,6 +163,9 @@ func runFedJoin(cmd *cobra.Command, locName string, fl fedFlags) error {
 	jb, jloc, err := locationBackend(locName)
 	if err != nil {
 		return err
+	}
+	if jloc.Backend == locations.BackendLocal {
+		return tserr.ConfigErr("fed join: local backend cannot join a federation (local stores are standalone)", nil)
 	}
 	jcat, err := readCatalog(ctx, jb)
 	if err != nil {

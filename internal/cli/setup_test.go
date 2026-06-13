@@ -23,9 +23,12 @@ func forceManualDiscovery(t *testing.T) {
 	t.Cleanup(func() { statusForDiscovery = prev })
 }
 
-// Discovery is forced to fail via the seam, so the flow falls back to manual
-// entry deterministically — no dependence on the host's tailscale binary.
-func TestSetup_InteractiveManualFallback(t *testing.T) {
+// `setup --remote` registers a remote node. Discovery is forced to fail via the
+// seam, so the flow falls back to manual entry deterministically. The fallback
+// stderr line varies by whether the tailscale binary is locatable on the host
+// (missing → "Entering manual mode."; present-but-down → "...entering manual
+// mode."), so the assertion keys on the common "manual mode" phrase.
+func TestSetup_RemoteInteractiveManualFallback(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	forceManualDiscovery(t)
 
@@ -35,12 +38,12 @@ func TestSetup_InteractiveManualFallback(t *testing.T) {
 	root.SetErr(&errb)
 	// name, node, base_path, backend, user
 	root.SetIn(strings.NewReader("home-pi\n100.64.0.5\n/data\nssh\nibte\n"))
-	root.SetArgs([]string{"setup"})
+	root.SetArgs([]string{"setup", "--remote"})
 	if err := root.Execute(); err != nil {
-		t.Fatalf("setup: %v", err)
+		t.Fatalf("setup --remote: %v", err)
 	}
 
-	if !strings.Contains(errb.String(), "discovery unavailable") {
+	if !strings.Contains(errb.String(), "manual mode") {
 		t.Errorf("expected manual-fallback stderr line, got %q", errb.String())
 	}
 	reg, err := locations.Load()
@@ -52,6 +55,37 @@ func TestSetup_InteractiveManualFallback(t *testing.T) {
 		t.Errorf("registered entry = %+v", got)
 	}
 	if !strings.Contains(out.String(), `registered location "home-pi"`) {
+		t.Errorf("setup output = %q", out.String())
+	}
+}
+
+// Plain `tailvault setup` (no --remote) creates a LOCAL store: prompts for a
+// name then a store path, and persists a local-backend entry with no node.
+func TestSetup_LocalDefault(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	store := t.TempDir()
+
+	root := newRootCmd()
+	var out, errb bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&errb)
+	// name, local store path (name default would derive from the repo folder, but
+	// the explicit answer overrides it)
+	root.SetIn(strings.NewReader("mylocal\n" + store + "\n"))
+	root.SetArgs([]string{"setup"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("setup local: %v", err)
+	}
+
+	reg, err := locations.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	got := reg.Locations["mylocal"]
+	if got.Backend != locations.BackendLocal || got.BasePath != store || got.Node != "" || got.User != "" {
+		t.Errorf("local entry = %+v", got)
+	}
+	if !strings.Contains(out.String(), `registered local location "mylocal"`) {
 		t.Errorf("setup output = %q", out.String())
 	}
 }

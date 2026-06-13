@@ -6,6 +6,41 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.116 — 2026-06-13
+
+### Added
+- **First-class `local` storage backend.** A location can now be a
+  content-addressed store on the local filesystem (`backend = "local"`,
+  `base_path` only — no node/user/share), exposing the existing `FSBackend`.
+  Repo-managed mechanics are unchanged: bytes still *move* into the store on push
+  (clean/smudge filters, hooks, lock, pointers untouched) — only *where* the
+  store lives changes.
+- **`tailvault setup` now creates a local store by default.** Remote node
+  registration moves behind **`tailvault setup --remote`** (the peer pick-list;
+  `--node` still skips it). The local flow prompts for a name (defaulting to the
+  current git repo's folder) and a store path (defaulting to
+  `~/.tailvault/stores/<name>`, deliberately outside any repo so blobs never
+  enter git). `tailvault location add --backend local --base-path …` is the
+  scriptable form.
+
+### Changed
+- **`location ls` reachability for local** is a `base_path` stat (directory
+  exists, or is creatable on first write) instead of a tailnet ping; a
+  missing/unwritable store still hard-fails on push (`TV-NODE-02`) — the
+  no-silent-success guarantee is preserved.
+- **`Location.Validate`** now requires only `base_path` for local and rejects a
+  stray `node`/`user`/`share`; the node-required check moved into the
+  ssh/taildrive cases. Backend error text now reads `local|ssh|taildrive`.
+- **`tailvault init`** prints a hint to run `setup` when it writes a fresh
+  `tailvault.toml` with no storage location.
+
+### Notes
+- **Local stores are standalone, not federation members** (this version):
+  `SSH.TransferFrom` has no node-to-node path for a non-SSH source, so `fed init`
+  / `fed join` refuse a `local` backend with a clear error. Federating local +
+  remote is future work. SPEC.md updated accordingly (backend enum, local
+  reachability, standalone scope).
+
 ## v0.0.115 — 2026-06-13
 
 ### Fixed

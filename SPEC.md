@@ -199,9 +199,9 @@ never committed (it carries node addresses and, for SSH, the login user).
 
 | Field | Type | Filled by | Notes |
 |---|---|---|---|
-| `node` | string | discovery or `--node` | MagicDNS name or `100.x` IP |
-| `base_path` | string | interactive prompt | e.g. `/mnt/ssd/tailvault` (USB3 SSD, **not** the boot SD) |
-| `backend` | string | interactive prompt | `ssh` \| `taildrive` |
+| `node` | string | discovery or `--node` | MagicDNS name or `100.x` IP (ssh/taildrive only; **empty** for local) |
+| `base_path` | string | interactive prompt | e.g. `/mnt/ssd/tailvault` (USB3 SSD) for remote; a local dir (e.g. `~/.tailvault/stores/<name>`) for local |
+| `backend` | string | interactive prompt | `local` \| `ssh` \| `taildrive` |
 | `user` | string | interactive prompt (ssh) | SSH user (ssh backend only) |
 | `share` | string | interactive prompt (taildrive) | Taildrive share name (taildrive backend only) |
 
@@ -211,13 +211,30 @@ never committed (it carries node addresses and, for SSH, the login user).
 `user`/`share` come from interactive prompts. Manual entry (`--node`) is always
 available as a fallback when the daemon can't enumerate peers.
 
+**`local` backend.** A location may be a content-addressed store on the local
+filesystem (`backend = "local"`, `base_path` only — `node`/`user`/`share` must
+be empty). It is created by the default `tailvault setup` (remote node
+registration moves behind `tailvault setup --remote`). Repo-managed mechanics are
+identical to a remote location — bytes still *move* into the store on push; only
+*where* the store lives changes. Two consequences follow from there being no
+remote node:
+
+- **Reachability** is a `base_path` stat (exists & is a directory, or is
+  creatable on first write) rather than a tailnet ping; a missing/unwritable
+  store still **hard-fails** on push (`TV-NODE-02`) — the *no-silent-success*
+  guarantee holds, but the *"bytes on a separate machine"* guarantee does not.
+- **Local locations are standalone, not federation members** in this version:
+  there is no node-to-node transfer path between a local store and an SSH node
+  (`SSH.TransferFrom` accepts only SSH sources), so `fed init`/`fed join` refuse a
+  `local` backend. Federating local + remote is future work.
+
 ### Sample (verbatim from proposal.md)
 
 ```toml
 [locations.home-pi]
 node      = "home-pi.tailnet-name.ts.net"  # MagicDNS or 100.x IP
 base_path = "/mnt/ssd/tailvault"            # on a USB3 SSD, not the boot SD
-backend   = "ssh"                           # ssh | taildrive
+backend   = "ssh"                           # local | ssh | taildrive
 user      = "ibte"
 
 [locations.office-nas]
@@ -225,6 +242,11 @@ node      = "100.92.14.7"
 base_path = "/vault"
 backend   = "taildrive"
 share     = "vault"
+
+[locations.home]                            # a local store: base_path only
+node      = ""
+base_path = "/Users/ibte/.tailvault/stores/home"
+backend   = "local"
 ```
 
 ### Storage layout on the node (for reference)
