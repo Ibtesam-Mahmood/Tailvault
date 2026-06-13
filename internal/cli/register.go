@@ -31,13 +31,6 @@ func registerLocal(cmd *cobra.Command, name, pathFlag string) error {
 		return tserr.ConfigErr("setup: --path requires --name", nil)
 	}
 
-	if interactive {
-		if !askYesNo(pr, "Create a local storage location?", true) {
-			fmt.Fprintln(out, "aborted")
-			return nil
-		}
-	}
-
 	if name == "" {
 		def := "home"
 		if root, err := gitglue.RepoRoot(""); err == nil && root != "" {

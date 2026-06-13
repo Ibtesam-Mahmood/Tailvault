@@ -6,6 +6,14 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.118 — 2026-06-13
+
+### Changed
+- **`tailvault setup` (local) asks for confirmation only at the end.** The upfront
+  "Create a local storage location?" prompt is removed; setup goes straight to
+  name → store-location menu, then a single confirm of the fully resolved choice
+  before writing.
+
 ## v0.0.117 — 2026-06-13
 
 ### Changed

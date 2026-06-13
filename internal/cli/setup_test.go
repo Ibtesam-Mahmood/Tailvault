@@ -99,8 +99,8 @@ func TestSetup_LocalInteractive(t *testing.T) {
 	var out, errb bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&errb)
-	// confirm y · name · choose "o" · path · final confirm y
-	root.SetIn(strings.NewReader("y\nmyloc\no\n" + store + "\ny\n"))
+	// name · choose "o" · path · final confirm y (the only confirm is at the end)
+	root.SetIn(strings.NewReader("myloc\no\n" + store + "\ny\n"))
 	root.SetArgs([]string{"setup"})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("setup interactive: %v", err)
