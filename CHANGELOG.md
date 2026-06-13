@@ -6,6 +6,19 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.119 — 2026-06-13
+
+### Added
+- **`tailvault location rm <name>`** — un-register a storage location from
+  `locations.toml`. **Always double-confirmed** (both prompts default to "no");
+  un-registering never touches stored bytes. **`--purge`** (local backend only)
+  *also* deletes the store's data, guarded by a **third** confirmation. Purge is
+  scoped to tailvault's own dirs (`objects/`, `refs/`, `meta/`) under `base_path`
+  and removes `base_path` only if then empty — so a store rooted in a folder with
+  other files leaves those files intact (never a blind `rm -rf base_path`).
+  `--purge` on a non-local backend is refused.
+- `locations.Registry.Remove(name)` — deletes a named entry, erroring when absent.
+
 ## v0.0.118 — 2026-06-13
 
 ### Changed

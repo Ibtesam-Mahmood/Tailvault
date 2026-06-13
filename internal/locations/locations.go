@@ -110,6 +110,16 @@ func (r *Registry) Add(name string, loc Location) error {
 	return nil
 }
 
+// Remove deletes a named entry. It errors when the name is absent so callers can
+// report a clear "not registered" instead of silently succeeding.
+func (r *Registry) Remove(name string) error {
+	if _, ok := r.Locations[name]; !ok {
+		return tserr.ConfigErr(fmt.Sprintf("location %q is not registered", name), nil)
+	}
+	delete(r.Locations, name)
+	return nil
+}
+
 // Validate checks that a Location has the fields its backend requires. Every
 // backend needs base_path; ssh/taildrive additionally need a node (and user /
 // share), while local needs ONLY base_path and rejects node/user/share so a

@@ -57,6 +57,8 @@ tailvault vault get models/big.stl    # download by path or ID (no password need
 | `tailvault config` | Locate + register the `tailscale` CLI (fixes peer discovery when Tailscale is a GUI app off `PATH`). |
 | `tailvault init` | Write `tailvault.toml` + `.gitattributes` and install git hooks in the current repo. |
 | `tailvault location add <name>` | Register a storage target (writes `locations.toml`). `--backend local\|ssh\|taildrive`; `local` needs only `--base-path`. |
+| `tailvault location ls` | List registered locations + live reachability. |
+| `tailvault location rm <name>` | Un-register a location (**double-confirmed**; never touches stored bytes). `--purge` also deletes the local store data (`objects/`,`refs/`,`meta/`) with a **3rd** confirmation. |
 | `tailvault location list` | List registered locations + live reachability. |
 
 ### Repo-managed workflow

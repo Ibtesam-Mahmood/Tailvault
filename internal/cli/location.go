@@ -3,13 +3,17 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
 	"github.com/Ibtesam-Mahmood/tailvault/internal/locations"
+	"github.com/Ibtesam-Mahmood/tailvault/internal/setup"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/tailscale"
+	"github.com/Ibtesam-Mahmood/tailvault/internal/tserr"
 )
 
 func newLocationCmd() *cobra.Command {
@@ -17,8 +21,92 @@ func newLocationCmd() *cobra.Command {
 		Use:   "location",
 		Short: "Manage storage locations",
 	}
-	c.AddCommand(newLocationAddCmd(), newLocationLsCmd())
+	c.AddCommand(newLocationAddCmd(), newLocationLsCmd(), newLocationRmCmd())
 	return c
+}
+
+func newLocationRmCmd() *cobra.Command {
+	var purge bool
+	cmd := &cobra.Command{
+		Use:   "rm <name>",
+		Short: "Un-register a storage location (double-confirmed; --purge also deletes the local store data)",
+		Long: "Remove a location from locations.toml. This is always double-confirmed. " +
+			"Un-registering does NOT touch stored bytes. With --purge (local backend " +
+			"only) it ALSO deletes the store's data dirs (objects/, refs/, meta/) under " +
+			"base_path — guarded by an additional, third confirmation. --purge never " +
+			"deletes anything other than tailvault's own store dirs, so a store rooted " +
+			"in a folder with other files leaves those files intact.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runLocationRm(cmd, args[0], purge)
+		},
+	}
+	cmd.Flags().BoolVar(&purge, "purge", false, "also delete the on-disk store data (local backend only; adds a 3rd confirmation)")
+	return cmd
+}
+
+func runLocationRm(cmd *cobra.Command, name string, purge bool) error {
+	reg, err := locations.Load()
+	if err != nil {
+		return err
+	}
+	loc, ok := reg.Locations[name]
+	if !ok {
+		return tserr.ConfigErr(fmt.Sprintf("location %q is not registered", name), nil)
+	}
+	if purge && loc.Backend != locations.BackendLocal {
+		return tserr.ConfigErr(fmt.Sprintf("--purge only supports the local backend; %q is %s — remove it without --purge", name, loc.Backend), nil)
+	}
+
+	pr := setup.NewStdinPrompter(cmd.InOrStdin(), cmd.OutOrStdout())
+	out := cmd.OutOrStdout()
+
+	// Always double-confirm (both default to "no").
+	if !askYesNo(pr, fmt.Sprintf("Remove location %q (%s) from the registry?", name, loc.Backend), false) {
+		fmt.Fprintln(out, "aborted")
+		return nil
+	}
+	if !askYesNo(pr, fmt.Sprintf("Confirm: un-register %q?", name), false) {
+		fmt.Fprintln(out, "aborted")
+		return nil
+	}
+	// --purge: one MORE confirmation before any bytes are erased.
+	if purge {
+		if !askYesNo(pr, fmt.Sprintf("ALSO DELETE the store data (objects/, refs/, meta/) under %s? This permanently erases stored blobs.", loc.BasePath), false) {
+			fmt.Fprintln(out, "aborted")
+			return nil
+		}
+	}
+
+	if err := reg.Remove(name); err != nil {
+		return err
+	}
+	if err := reg.Save(); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "removed location %q from the registry\n", name)
+
+	if purge {
+		if err := purgeLocalStore(loc.BasePath); err != nil {
+			return tserr.ConfigErr(fmt.Sprintf("purge: delete store data under %s", loc.BasePath), err)
+		}
+		fmt.Fprintf(out, "purged store data under %s\n", loc.BasePath)
+	}
+	return nil
+}
+
+// purgeLocalStore deletes only tailvault's own store directories under base — it
+// never RemoveAll's base itself (which could nuke unrelated files when the store
+// is rooted in a shared folder). After clearing them it removes base only if it
+// is now empty (best-effort).
+func purgeLocalStore(base string) error {
+	for _, sub := range []string{"objects", "refs", "meta"} {
+		if err := os.RemoveAll(filepath.Join(base, sub)); err != nil {
+			return err
+		}
+	}
+	_ = os.Remove(base) // succeeds only if empty; ignore otherwise
+	return nil
 }
 
 func newLocationAddCmd() *cobra.Command {
