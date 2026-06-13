@@ -6,6 +6,17 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.114 — 2026-06-13
+
+### Fixed
+- **Release pipeline: pin `sigstore/cosign-installer` to `@v4.1.2`.** The
+  v0.0.107 bump to `@v4` referenced a moving major tag the action doesn't
+  publish, so the first release run after it (v0.0.113) failed at job setup with
+  *"unable to find version `v4`"* before GoReleaser ran — no assets were ever
+  built. Pinning to an existing tag restores releases (and thus the Windows
+  `.zip` download path). v0.0.113 has no published release as a result; v0.0.114
+  is the first good release of the auto-detect work.
+
 ## v0.0.113 — 2026-06-13
 
 ### Fixed
