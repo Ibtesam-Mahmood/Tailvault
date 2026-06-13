@@ -3,7 +3,9 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -11,14 +13,30 @@ import (
 	"github.com/Ibtesam-Mahmood/tailvault/internal/locations"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/setup"
 	"github.com/Ibtesam-Mahmood/tailvault/internal/tailscale"
+	"github.com/Ibtesam-Mahmood/tailvault/internal/tserr"
 )
 
 // registerLocal runs the default `tailvault setup` flow: create a LOCAL storage
-// location on this machine. It prompts for a name (defaulting to the current git
-// repo's folder when inside one, else "home") and a store path (defaulting to
-// ~/.tailvault/stores/<name>), then persists the entry. No tailnet node, no SSH.
-func registerLocal(cmd *cobra.Command, name string) error {
+// location on this machine. Interactive (no --path): confirm intent, prompt for a
+// name (defaulting to the repo folder, else "home"), choose where the store lives
+// (current folder / home / another path), then confirm. Scriptable: --name +
+// --path skip every prompt. In all cases a store path INSIDE a git working tree
+// is refused (blobs would pollute the repo).
+func registerLocal(cmd *cobra.Command, name, pathFlag string) error {
 	pr := setup.NewStdinPrompter(cmd.InOrStdin(), cmd.OutOrStdout())
+	out := cmd.OutOrStdout()
+	interactive := pathFlag == ""
+
+	if !interactive && name == "" {
+		return tserr.ConfigErr("setup: --path requires --name", nil)
+	}
+
+	if interactive {
+		if !askYesNo(pr, "Create a local storage location?", true) {
+			fmt.Fprintln(out, "aborted")
+			return nil
+		}
+	}
 
 	if name == "" {
 		def := "home"
@@ -35,11 +53,31 @@ func registerLocal(cmd *cobra.Command, name string) error {
 		name = n
 	}
 
-	loc, err := setup.BuildLocalLocation(pr, name)
-	if err != nil {
+	var path string
+	if interactive {
+		p, err := chooseLocalPath(pr, name)
+		if err != nil {
+			return err
+		}
+		path = p
+	} else {
+		path = pathFlag
+	}
+	if abs, err := filepath.Abs(path); err == nil {
+		path = abs
+	}
+
+	// Guard: never create a content-addressed store inside a git working tree.
+	if err := guardLocalStorePath(name, path); err != nil {
 		return err
 	}
 
+	if interactive && !askYesNo(pr, fmt.Sprintf("Create local store %q at %s?", name, path), true) {
+		fmt.Fprintln(out, "aborted")
+		return nil
+	}
+
+	loc := locations.Location{Backend: locations.BackendLocal, BasePath: path}
 	reg, err := locations.Load()
 	if err != nil {
 		return err
@@ -50,8 +88,100 @@ func registerLocal(cmd *cobra.Command, name string) error {
 	if err := reg.Save(); err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "registered local location %q (base_path %s)\n", name, loc.BasePath)
+	fmt.Fprintf(out, "registered local location %q (base_path %s)\n", name, path)
 	return nil
+}
+
+// askYesNo reads a y/n answer, returning def on an empty line.
+func askYesNo(pr *setup.StdinPrompter, q string, def bool) bool {
+	d := "n"
+	if def {
+		d = "y"
+	}
+	ans, err := pr.AskString(q+" [y/n]", d)
+	if err != nil {
+		return false
+	}
+	ans = strings.ToLower(strings.TrimSpace(ans))
+	return ans == "y" || ans == "yes"
+}
+
+// chooseLocalPath presents the store-location menu and returns the chosen path.
+// The home option is offered only when that path does not already exist ("only
+// if not already set"); the current folder is always offered; "o" / any other
+// text takes a free path.
+func chooseLocalPath(pr *setup.StdinPrompter, name string) (string, error) {
+	cwd, _ := os.Getwd()
+	homeDef := setup.DefaultLocalStore(name)
+	_, homeErr := os.Stat(homeDef)
+	homeAvailable := os.IsNotExist(homeErr)
+
+	fmt.Fprintln(pr.Out, "where should the store live?")
+	if homeAvailable {
+		fmt.Fprintf(pr.Out, "  h) home            %s\n", homeDef)
+	} else {
+		fmt.Fprintf(pr.Out, "  (home %s already exists — pick another)\n", homeDef)
+	}
+	fmt.Fprintf(pr.Out, "  c) current folder  %s\n", cwd)
+	fmt.Fprintln(pr.Out, "  o) other path")
+
+	def := "h"
+	if !homeAvailable {
+		def = "c"
+	}
+	choice, err := pr.AskString("choice", def)
+	if err != nil {
+		return "", err
+	}
+	switch strings.ToLower(strings.TrimSpace(choice)) {
+	case "h":
+		return homeDef, nil
+	case "c":
+		return cwd, nil
+	case "o":
+		return pr.AskString("store path", "")
+	default:
+		return choice, nil // treat anything else as a literal path
+	}
+}
+
+// guardLocalStorePath refuses a local store whose path falls inside a git working
+// tree (the store root or any path within a repo) — content-addressed blobs there
+// would be tracked by git, defeating the point of tailvault. Home and any path
+// outside a repo pass.
+func guardLocalStorePath(name, path string) error {
+	if root, inside := storePathInGitRepo(path); inside {
+		return tserr.ConfigErr(fmt.Sprintf(
+			"refusing to create a local store at %s: it is inside the git repo %s — blobs would pollute the repo. Use ~/.tailvault/stores/%s or a path outside any repo.",
+			path, root, name), nil)
+	}
+	return nil
+}
+
+// storePathInGitRepo reports the git repo root if path lies inside a git working
+// tree. For a not-yet-created path it checks the nearest existing ancestor, so a
+// planned subfolder of a repo is still caught.
+func storePathInGitRepo(path string) (string, bool) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", false
+	}
+	d := abs
+	for {
+		if fi, statErr := os.Stat(d); statErr == nil && fi.IsDir() {
+			break
+		}
+		parent := filepath.Dir(d)
+		if parent == d {
+			return "", false
+		}
+		d = parent
+	}
+	root, err := gitglue.RepoRoot(d)
+	if err != nil || root == "" {
+		return "", false
+	}
+	return root, true
 }
 
 // statusForDiscovery is the seam for tailnet peer discovery in the interactive

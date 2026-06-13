@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -59,8 +61,8 @@ func TestSetup_RemoteInteractiveManualFallback(t *testing.T) {
 	}
 }
 
-// Plain `tailvault setup` (no --remote) creates a LOCAL store: prompts for a
-// name then a store path, and persists a local-backend entry with no node.
+// `tailvault setup --name --path` is the scriptable local path: no prompts,
+// persists a local-backend entry with no node.
 func TestSetup_LocalDefault(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	store := t.TempDir()
@@ -69,10 +71,7 @@ func TestSetup_LocalDefault(t *testing.T) {
 	var out, errb bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&errb)
-	// name, local store path (name default would derive from the repo folder, but
-	// the explicit answer overrides it)
-	root.SetIn(strings.NewReader("mylocal\n" + store + "\n"))
-	root.SetArgs([]string{"setup"})
+	root.SetArgs([]string{"setup", "--name", "mylocal", "--path", store})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("setup local: %v", err)
 	}
@@ -87,6 +86,55 @@ func TestSetup_LocalDefault(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), `registered local location "mylocal"`) {
 		t.Errorf("setup output = %q", out.String())
+	}
+}
+
+// Interactive `tailvault setup`: confirm, name, choose "o" (other path), enter a
+// path, confirm. Persists a local entry at the chosen path.
+func TestSetup_LocalInteractive(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	store := filepath.Join(t.TempDir(), "mystore")
+
+	root := newRootCmd()
+	var out, errb bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&errb)
+	// confirm y · name · choose "o" · path · final confirm y
+	root.SetIn(strings.NewReader("y\nmyloc\no\n" + store + "\ny\n"))
+	root.SetArgs([]string{"setup"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("setup interactive: %v", err)
+	}
+
+	reg, _ := locations.Load()
+	got := reg.Locations["myloc"]
+	if got.Backend != locations.BackendLocal || got.Node != "" {
+		t.Errorf("entry = %+v", got)
+	}
+	if !strings.HasSuffix(got.BasePath, "mystore") {
+		t.Errorf("base_path = %q (want …/mystore)", got.BasePath)
+	}
+}
+
+// A local store path inside a git repo is refused (blobs would pollute it).
+func TestSetup_LocalRefusesGitRepo(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	repo := t.TempDir()
+	if out, err := exec.Command("git", "-C", repo, "init").CombinedOutput(); err != nil {
+		t.Skipf("git init unavailable: %v (%s)", err, out)
+	}
+
+	root := newRootCmd()
+	var out, errb bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&errb)
+	root.SetArgs([]string{"setup", "--name", "x", "--path", repo})
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected setup to refuse a store inside a git repo")
+	}
+	if !strings.Contains(err.Error(), "inside the git repo") {
+		t.Errorf("error = %v", err)
 	}
 }
 

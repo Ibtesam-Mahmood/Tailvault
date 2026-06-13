@@ -6,6 +6,27 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.117 — 2026-06-13
+
+### Changed
+- **`tailvault setup` (local) is now a confirm-first, choose-where flow.** It
+  confirms intent, prompts for a name (defaulting to the repo folder), then offers
+  three locations: **current folder** (`pwd`), **home**
+  (`~/.tailvault/stores/<name>`, offered only when it doesn't already exist), or
+  **another path** — then confirms the resolved path before writing. Blobs live at
+  the chosen path's root (`objects/`, `refs/` directly there).
+- **`--name` + `--path` make `setup` scriptable** (skips all prompts;
+  `--path` requires `--name`).
+
+### Added
+- **Git-repo guard for local stores.** `setup` and
+  `location add --backend local` **refuse** a store path inside a git working
+  tree (the repo root or any subfolder) with a clear `TV-CFG-01` error — blobs
+  there would be committed and defeat tailvault. Home and any path outside a repo
+  are allowed. This replaces the earlier silent home-default: the current folder
+  is now a first-class choice for non-repo directories, while a repo path is
+  blocked outright rather than gitignored.
+
 ## v0.0.116 — 2026-06-13
 
 ### Added

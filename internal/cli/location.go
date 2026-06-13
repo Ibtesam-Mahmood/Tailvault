@@ -51,6 +51,12 @@ func newLocationAddCmd() *cobra.Command {
 				User:     user,
 				Share:    share,
 			}
+			// A local store must not live inside a git repo (blobs would pollute it).
+			if loc.Backend == locations.BackendLocal {
+				if err := guardLocalStorePath(args[0], loc.BasePath); err != nil {
+					return err
+				}
+			}
 			if err := reg.Add(args[0], loc); err != nil {
 				return err
 			}

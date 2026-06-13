@@ -36,17 +36,6 @@ func DefaultLocalStore(name string) string {
 	return filepath.Join(home, ".tailvault", "stores", name)
 }
 
-// BuildLocalLocation builds a local-backend Location, prompting only for the
-// store path (defaulting to the per-name home store). A local store has no node,
-// user, or share — it is a content-addressed directory on this machine.
-func BuildLocalLocation(p Prompter, name string) (locations.Location, error) {
-	path, err := p.AskString("local store path", DefaultLocalStore(name))
-	if err != nil {
-		return locations.Location{}, err
-	}
-	return locations.Location{Backend: locations.BackendLocal, BasePath: path}, nil
-}
-
 // BuildLocation runs the registration flow and returns a locations.Location
 // ready to persist. A non-empty node skips the pick-list (manual / --node). The
 // chosen backend drives whether user (ssh) or share (taildrive) is asked.
