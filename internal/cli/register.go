@@ -45,8 +45,16 @@ func registerInteractive(cmd *cobra.Command, name, node string) error {
 		st, err := statusForDiscovery(cmd.Context())
 		if p, ok := setup.OnlinePeers(st, err); ok {
 			peers = p
+		} else if _, found := tailscale.Locate(); !found {
+			// The binary itself is missing — a failed resolution, not a down
+			// daemon. Flag the real fix (PATH / install / register) instead of a
+			// generic "unavailable", then fall back to manual entry.
+			fmt.Fprintln(cmd.ErrOrStderr(), "tailscale CLI not found on PATH or in any known location — peer auto-detect is off.")
+			fmt.Fprintln(cmd.ErrOrStderr(), "  fix: install Tailscale, or run `tailvault config` to locate and register it (or set TAILVAULT_TAILSCALE).")
+			fmt.Fprintln(cmd.ErrOrStderr(), "Entering manual mode.")
 		} else {
-			fmt.Fprintln(cmd.ErrOrStderr(), "Tailscale peer discovery unavailable; entering manual mode.")
+			// Binary resolves but the session isn't usable (daemon down / logged out).
+			fmt.Fprintln(cmd.ErrOrStderr(), "Tailscale peer discovery unavailable (daemon down or not logged in); entering manual mode.")
 		}
 	}
 

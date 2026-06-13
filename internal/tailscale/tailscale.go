@@ -39,14 +39,22 @@ type Runner interface {
 // Client is the typed wrapper over the tailscale CLI.
 type Client struct{ R Runner }
 
-// New returns a Client that shells out to the real `tailscale` binary.
-func New() *Client { return &Client{R: execRunner{}} }
+// New returns a Client that shells out to the real `tailscale` binary, resolved
+// from the env override, the persisted config, PATH, then OS well-known
+// locations (see Locate). On a GUI-app machine where `tailscale` is not on PATH
+// this is what lets peer discovery work without a manual symlink.
+func New() *Client { return &Client{R: execRunner{bin: resolveBinary()}} }
 
-// execRunner is the default Runner: it invokes `tailscale <args...>`.
-type execRunner struct{}
+// execRunner is the default Runner: it invokes the resolved tailscale binary
+// with `<args...>`. bin is the resolved path (or the bare name as a last resort).
+type execRunner struct{ bin string }
 
-func (execRunner) Run(ctx context.Context, args ...string) ([]byte, error) {
-	return exec.CommandContext(ctx, "tailscale", args...).Output()
+func (e execRunner) Run(ctx context.Context, args ...string) ([]byte, error) {
+	bin := e.bin
+	if bin == "" {
+		bin = binName()
+	}
+	return exec.CommandContext(ctx, bin, args...).Output()
 }
 
 // statusJSON mirrors only the few fields tailvault needs out of the large,

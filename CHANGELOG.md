@@ -6,6 +6,30 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.113 — 2026-06-13
+
+### Fixed
+- **`tailvault setup` peer auto-detect now works when the `tailscale` CLI is not
+  on `PATH`** (the common case on macOS/Windows where Tailscale ships as a GUI
+  app). Previously the bare-name `exec("tailscale", …)` failed with
+  binary-not-found and discovery silently fell back to manual entry with a vague
+  *"peer discovery unavailable"*. `internal/tailscale` now resolves the binary
+  via **`TAILVAULT_TAILSCALE` env → saved config → `PATH` → OS well-known
+  locations** (the macOS app bundle, `C:\Program Files\Tailscale\tailscale.exe`),
+  so auto-detect succeeds out of the box.
+
+### Added
+- **`tailvault config`** — locates the `tailscale` CLI, verifies the local
+  session, and persists the resolved path to `~/.config/tailvault/config.toml`
+  so every later command (and peer discovery) finds it. Errors with an
+  install hint if no binary is found; `--show` prints the stored/resolved path.
+- **`internal/appconfig`** — user-level `config.toml` (honoring
+  `XDG_CONFIG_HOME`), a leaf package holding the resolved `tailscale_path`.
+- **`tserr.NetBinaryNotFoundErr` (TV-NET-01)** — distinct "install Tailscale /
+  run `tailvault config`" message, separate from "daemon down". The interactive
+  setup flow now flags a missing binary (fix your PATH) vs. a down daemon
+  instead of one generic line.
+
 ## v0.0.112 — 2026-06-11
 
 ### Docs

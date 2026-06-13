@@ -94,6 +94,20 @@ func NetNotRunningErr(err error) *Error {
 	}
 }
 
+// NetBinaryNotFoundErr reports that the `tailscale` CLI could not be found on
+// PATH or in any known install location — so tailvault cannot read the local
+// tailnet session at all. Distinct in message from NetNotRunningErr (which means
+// the binary exists but the daemon is down): this one tells the user to install
+// Tailscale or register its path. Shares the NetNotRunning code/bucket (3).
+func NetBinaryNotFoundErr(err error) *Error {
+	return &Error{
+		Code:  NetNotRunning,
+		Cause: "tailscale CLI not found on PATH or in any known install location",
+		Fix:   "install Tailscale (https://tailscale.com/download), or run `tailvault config` to locate and register it, or set TAILVAULT_TAILSCALE to its full path",
+		Err:   err,
+	}
+}
+
 // NetNotLoggedInErr reports that the machine is not logged into the tailnet.
 func NetNotLoggedInErr(err error) *Error {
 	return &Error{

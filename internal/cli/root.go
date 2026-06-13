@@ -16,7 +16,7 @@ func newRootCmd() *cobra.Command {
 	}
 	root.SetVersionTemplate("{{.Version}}\n")
 	root.AddCommand(
-		newSetupCmd(), newInitCmd(), newLocationCmd(),
+		newSetupCmd(), newConfigCmd(), newInitCmd(), newLocationCmd(),
 		newTrackCmd(), newStatusCmd(), newPushCmd(), newPullCmd(),
 		newGCCmd(), newVerifyCmd(), newRevertCmd(), newHealCmd(),
 		newMergeLockCmd(), newFilterCleanCmd(), newFilterSmudgeCmd(),
