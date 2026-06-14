@@ -144,6 +144,57 @@ func TestLocationRm_PurgeAbortsWithoutThird(t *testing.T) {
 	}
 }
 
+func TestLocationRm_NoNameResolvesCwd(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	store := t.TempDir()
+	seedLocal(t, "here", store)
+	t.Chdir(store)
+
+	out, err := runRm(t, "y\ny\n") // no name → resolves to the cwd's location
+	if err != nil {
+		t.Fatalf("rm: %v", err)
+	}
+	if !strings.Contains(out, `removed location "here"`) {
+		t.Errorf("out = %q", out)
+	}
+	reg, _ := locations.Load()
+	if _, ok := reg.Locations["here"]; ok {
+		t.Error("entry still present after no-name rm")
+	}
+}
+
+func TestLocationRm_NoNameNoMatchErrors(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	seedLocal(t, "elsewhere", t.TempDir()) // store is NOT the cwd
+	t.Chdir(t.TempDir())                   // a different folder
+
+	if _, err := runRm(t, "y\ny\n"); err == nil {
+		t.Fatal("expected error when no location matches the current folder")
+	}
+}
+
+func TestLocationRm_NoNamePurgeFromCwdDeletesAndHints(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	parent := t.TempDir()
+	store := filepath.Join(parent, "store")
+	if err := os.MkdirAll(filepath.Join(store, "objects"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	seedLocal(t, "here", store)
+	t.Chdir(store)
+
+	out, err := runRm(t, "y\ny\ny\n", "--purge") // no name, purge from cwd
+	if err != nil {
+		t.Fatalf("rm --purge: %v", err)
+	}
+	if _, err := os.Stat(store); !os.IsNotExist(err) {
+		t.Error("store folder should be removed (it held only tailvault data)")
+	}
+	if !strings.Contains(out, "now deleted") || !strings.Contains(out, "cd ") {
+		t.Errorf("expected a cd-to-parent hint, out = %q", out)
+	}
+}
+
 func TestLocationRm_PurgeRejectedForRemote(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	reg, _ := locations.Load()

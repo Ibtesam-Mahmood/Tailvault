@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -28,17 +29,24 @@ func newLocationCmd() *cobra.Command {
 func newLocationRmCmd() *cobra.Command {
 	var purge bool
 	cmd := &cobra.Command{
-		Use:   "rm <name>",
+		Use:   "rm [name]",
 		Short: "Un-register a storage location (double-confirmed; --purge also deletes the local store data)",
-		Long: "Remove a location from locations.toml. This is always double-confirmed. " +
-			"Un-registering does NOT touch stored bytes. With --purge (local backend " +
+		Long: "Remove a location from locations.toml. With no <name>, removes the local " +
+			"location whose store is the CURRENT folder. Always double-confirmed; " +
+			"un-registering does NOT touch stored bytes. With --purge (local backend " +
 			"only) it ALSO deletes the store's data dirs (objects/, refs/, meta/) under " +
-			"base_path — guarded by an additional, third confirmation. --purge never " +
-			"deletes anything other than tailvault's own store dirs, so a store rooted " +
-			"in a folder with other files leaves those files intact.",
-		Args: cobra.ExactArgs(1),
+			"base_path — guarded by a third confirmation — and removes base_path if it is " +
+			"then empty. --purge never deletes anything other than tailvault's own store " +
+			"dirs, so a store folder containing other files keeps them. If the purged " +
+			"folder was your current directory, you'll be told to `cd` to its parent (a " +
+			"CLI can't change your shell's directory for you).",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runLocationRm(cmd, args[0], purge)
+			name := ""
+			if len(args) == 1 {
+				name = args[0]
+			}
+			return runLocationRm(cmd, name, purge)
 		},
 	}
 	cmd.Flags().BoolVar(&purge, "purge", false, "also delete the on-disk store data (local backend only; adds a 3rd confirmation)")
@@ -49,6 +57,14 @@ func runLocationRm(cmd *cobra.Command, name string, purge bool) error {
 	reg, err := locations.Load()
 	if err != nil {
 		return err
+	}
+	// No name: target the local location whose store IS the current folder.
+	if name == "" {
+		n, rerr := locationAtCwd(reg)
+		if rerr != nil {
+			return rerr
+		}
+		name = n
 	}
 	loc, ok := reg.Locations[name]
 	if !ok {
@@ -87,26 +103,86 @@ func runLocationRm(cmd *cobra.Command, name string, purge bool) error {
 	fmt.Fprintf(out, "removed location %q from the registry\n", name)
 
 	if purge {
-		if err := purgeLocalStore(loc.BasePath); err != nil {
-			return tserr.ConfigErr(fmt.Sprintf("purge: delete store data under %s", loc.BasePath), err)
+		absBase, _ := filepath.Abs(loc.BasePath)
+		parent := filepath.Dir(absBase)
+		// If the store is our current directory, step out before deleting it —
+		// required on Windows (can't remove a process's cwd) and tidy elsewhere.
+		wasCwd := false
+		if cwd, gerr := os.Getwd(); gerr == nil {
+			wasCwd = samePath(cwd, absBase)
 		}
-		fmt.Fprintf(out, "purged store data under %s\n", loc.BasePath)
+		if wasCwd {
+			_ = os.Chdir(parent)
+		}
+		removedBase, perr := purgeLocalStore(absBase)
+		if perr != nil {
+			return tserr.ConfigErr(fmt.Sprintf("purge: delete store data under %s", absBase), perr)
+		}
+		fmt.Fprintf(out, "purged store data under %s\n", absBase)
+		if removedBase {
+			fmt.Fprintf(out, "removed empty store folder %s\n", absBase)
+			if wasCwd {
+				fmt.Fprintf(out, "note: that folder was your current directory and is now deleted — run: cd %s\n", parent)
+			}
+		}
 	}
 	return nil
+}
+
+// locationAtCwd returns the name of the local location whose store IS the current
+// folder. It errors when none (or more than one) match — telling the caller to
+// pass an explicit name.
+func locationAtCwd(reg locations.Registry) (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	var matches []string
+	for n, loc := range reg.Locations {
+		if loc.Backend == locations.BackendLocal && samePath(loc.BasePath, cwd) {
+			matches = append(matches, n)
+		}
+	}
+	sort.Strings(matches)
+	switch len(matches) {
+	case 1:
+		return matches[0], nil
+	case 0:
+		return "", tserr.ConfigErr(fmt.Sprintf("no local location registered at the current folder (%s); pass a <name>", cwd), nil)
+	default:
+		return "", tserr.ConfigErr(fmt.Sprintf("multiple locations at %s: %s — pass a <name>", cwd, strings.Join(matches, ", ")), nil)
+	}
+}
+
+// samePath reports whether a and b refer to the same directory, resolving
+// absolute paths and symlinks (macOS /var → /private/var, etc.).
+func samePath(a, b string) bool { return resolvePath(a) == resolvePath(b) }
+
+func resolvePath(p string) string {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return filepath.Clean(p)
+	}
+	if r, err := filepath.EvalSymlinks(abs); err == nil {
+		return r
+	}
+	return filepath.Clean(abs)
 }
 
 // purgeLocalStore deletes only tailvault's own store directories under base — it
 // never RemoveAll's base itself (which could nuke unrelated files when the store
 // is rooted in a shared folder). After clearing them it removes base only if it
-// is now empty (best-effort).
-func purgeLocalStore(base string) error {
+// is now empty; removedBase reports whether base itself was deleted.
+func purgeLocalStore(base string) (removedBase bool, err error) {
 	for _, sub := range []string{"objects", "refs", "meta"} {
-		if err := os.RemoveAll(filepath.Join(base, sub)); err != nil {
-			return err
+		if rerr := os.RemoveAll(filepath.Join(base, sub)); rerr != nil {
+			return false, rerr
 		}
 	}
-	_ = os.Remove(base) // succeeds only if empty; ignore otherwise
-	return nil
+	if os.Remove(base) == nil { // succeeds only when base is now empty
+		return true, nil
+	}
+	return false, nil
 }
 
 func newLocationAddCmd() *cobra.Command {

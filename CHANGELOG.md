@@ -6,6 +6,19 @@ All notable changes to Tailvault are documented here. The format follows
 **single source of truth**; every task bumps it by `+0.0.1` and adds a matching
 `## v<version>` heading here in the same commit.
 
+## v0.0.120 — 2026-06-13
+
+### Added
+- **`tailvault location rm` with no `<name>` targets the current folder** — it
+  removes the local location whose store IS the current directory (errors if none
+  or more than one match, asking for an explicit name). Path matching resolves
+  symlinks so it works under macOS's `/var`→`/private/var`.
+- **`--purge` from inside the store folder is handled cleanly:** the process
+  `chdir`s to the parent before deleting (required on Windows, which can't remove
+  a process's own cwd), removes the empty store folder, and prints `cd <parent>`
+  — because a CLI can't change the calling shell's directory itself, so your
+  shell must move out of the now-deleted folder manually.
+
 ## v0.0.119 — 2026-06-13
 
 ### Added
